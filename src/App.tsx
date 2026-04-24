@@ -3133,15 +3133,31 @@ const WalletView = ({ currentUser }: { currentUser: any }) => {
   );
 };
 
-const BetHistoryView = ({ onBack }: { onBack: () => void }) => {
+const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUser: any }) => {
   const { t } = useContext(LanguageContext);
-  const bets = [
-    { id: '20260422101', game: 'Wingo 5M', time: '2026-04-22 14:15:22', amount: '10.00', status: 'won', prize: '18.00' },
-    { id: '20260422102', game: 'Powerball', time: '2026-04-22 10:05:11', amount: '2.00', status: 'pending', prize: '-' },
-    { id: '20260422103', game: 'Fast 3', time: '2026-04-22 09:45:30', amount: '50.00', status: 'lost', prize: '0.00' },
-    { id: '20260421099', game: 'Wingo 5M', time: '2026-04-21 22:30:05', amount: '5.00', status: 'won', prize: '9.00' },
-    { id: '20260421098', game: 'Mega Millions', time: '2026-04-21 20:00:00', amount: '10.00', status: 'lost', prize: '0.00' },
-  ];
+  const [bets, setBets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(
+      collection(db, 'purchases'), 
+      where('uid', '==', currentUser.uid),
+      orderBy('timestamp', 'desc'),
+      limit(50)
+    );
+    
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setBets(data);
+      setLoading(false);
+    }, (err) => {
+      console.error("Fetch bits error:", err);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, [currentUser]);
 
   return (
     <div className="max-w-xl mx-auto pb-32 px-4">
@@ -3152,37 +3168,88 @@ const BetHistoryView = ({ onBack }: { onBack: () => void }) => {
         <h2 className="text-xl font-black text-text-main uppercase tracking-tight">{t('my_bets')}</h2>
       </div>
 
-      <div className="space-y-3">
-        {bets.map((bet) => (
-          <div key={bet.id} className="bg-white border border-border-grey rounded-2xl p-4 shadow-sm">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-0.5">{bet.game}</p>
-                <p className="text-[9px] font-medium text-text-muted/60">{bet.time}</p>
+      {loading ? (
+        <div className="flex flex-col items-center py-20 opacity-20">
+           <RotateCcw className="animate-spin mb-4" />
+           <p className="text-[10px] font-black uppercase">Loading History...</p>
+        </div>
+      ) : bets.length === 0 ? (
+        <div className="text-center py-20 bg-surface-grey rounded-3xl border border-dashed border-border-grey">
+          <p className="text-sm font-bold text-text-muted">暂无投资记录</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {bets.map((bet) => (
+            <div key={bet.id} className="bg-white border border-border-grey rounded-2xl p-4 shadow-sm relative overflow-hidden">
+              {bet.status === 'won' && (
+                <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none">
+                  <div className="absolute top-2 -right-6 w-24 py-1 bg-success text-white text-[8px] font-black uppercase text-center rotate-45 shadow-lg">
+                    Winning
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-0.5">{bet.lotteryName || bet.lotteryId}</p>
+                  <p className="text-[9px] font-medium text-text-muted/60">
+                    {bet.timestamp?.toDate ? bet.timestamp.toDate().toLocaleString() : 'Just now'}
+                  </p>
+                </div>
+                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
+                  bet.status === 'won' ? 'bg-success/10 text-success' : 
+                  bet.status === 'lost' ? 'bg-text-muted/10 text-text-muted' : 
+                  'bg-brand-blue/10 text-brand-blue'
+                }`}>
+                  {bet.status === 'won' ? t('status_won') : bet.status === 'lost' ? t('status_lost') : t('status_pending')}
+                </div>
               </div>
-              <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
-                bet.status === 'won' ? 'bg-success/10 text-success' : 
-                bet.status === 'lost' ? 'bg-text-muted/10 text-text-muted' : 
-                'bg-brand-blue/10 text-brand-blue'
-              }`}>
-                {bet.status}
+
+              {/* Display Wager Details */}
+              <div className="mb-4 bg-surface-grey rounded-xl p-3">
+                <p className="text-[8px] font-black text-text-muted/60 uppercase tracking-tighter mb-2">投注内容</p>
+                {bet.lines ? (
+                  <div className="space-y-1">
+                    {bet.lines.map((line: any, idx: number) => (
+                      <div key={idx} className="flex gap-1 flex-wrap">
+                        {line.main.map((n: number) => (
+                          <span key={idx+n} className="w-5 h-5 rounded-full bg-white border border-border-grey flex items-center justify-center text-[9px] font-black">{n}</span>
+                        ))}
+                        {line.powerball && (
+                          <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[9px] font-black">{line.powerball}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : bet.bets ? (
+                  <div className="flex flex-wrap gap-1">
+                    {bet.bets.map((b: any, idx: number) => (
+                      <span key={idx} className="px-2 py-1 bg-white border border-border-grey rounded text-[10px] font-black text-brand-blue">
+                        {b.type === 'sum' ? `和值:${b.val}` : b.val} x{b.multiplier || 1}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                   <p className="text-[10px] font-bold text-text-main">期号: #{bet.drawId}</p>
+                )}
+              </div>
+
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className="text-[8px] font-bold text-text-muted uppercase tracking-tighter mb-0.5">投注金额</p>
+                  <p className="text-xs font-black text-text-main">{bet.amount} <span className="text-[8px]">USDT</span></p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[8px] font-bold text-text-muted uppercase tracking-tighter mb-0.5">预计奖金</p>
+                  <p className={`text-sm font-black ${bet.status === 'won' ? 'text-success' : 'text-text-main'}`}>
+                    {bet.status === 'won' ? `+${bet.payout || bet.prize}` : (bet.payout || '-')} <span className="text-[8px]">USDT</span>
+                  </p>
+                </div>
               </div>
             </div>
-            <div className="flex justify-between items-end">
-              <div>
-                <p className="text-[8px] font-bold text-text-muted uppercase tracking-tighter mb-0.5">Amount</p>
-                <p className="text-xs font-black text-text-main">{bet.amount} <span className="text-[8px]">USDT</span></p>
-              </div>
-              <div className="text-right">
-                <p className="text-[8px] font-bold text-text-muted uppercase tracking-tighter mb-0.5">Prize</p>
-                <p className={`text-sm font-black ${bet.status === 'won' ? 'text-success' : 'text-text-main'}`}>
-                  {bet.status === 'won' ? `+${bet.prize}` : bet.prize} <span className="text-[8px]">USDT</span>
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -5151,4 +5218,5 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
     </div>
   );
 };
+
 
