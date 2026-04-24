@@ -65,6 +65,7 @@ import {
 import { 
   doc, 
   setDoc, 
+  addDoc,
   getDoc, 
   query, 
   collection, 
@@ -75,6 +76,7 @@ import {
   updateDoc,
   deleteDoc,
   orderBy,
+  limit,
   serverTimestamp 
 } from 'firebase/firestore';
 import { 
@@ -196,6 +198,9 @@ const translations: Record<string, Record<string, string>> = {
     cookie_settings: 'Cookie Settings',
     congratulations: 'Congratulations!',
     you_won: 'You Won',
+    status_won: 'Won',
+    status_lost: 'Lost',
+    status_pending: 'Pending',
     view_wallet: 'View My Wallet',
     share_result: 'Share Result',
     recent_results: 'Recent Results',
@@ -328,6 +333,9 @@ const translations: Record<string, Record<string, string>> = {
     cookie_settings: 'Cookie设置',
     congratulations: '恭喜！',
     you_won: '中奖啦',
+    status_won: '已中奖',
+    status_lost: '未中奖',
+    status_pending: '待开奖',
     view_wallet: '查看我的钱包',
     share_result: '分享结果',
     recent_results: '近期开奖',
@@ -2215,18 +2223,57 @@ const TicketSelection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lot
     setActiveLineIndex(Math.max(0, activeLineIndex - (activeLineIndex >= index ? 1 : 0)));
   };
 
-  const handlePurchase = () => {
-    if (!isAllComplete || isAiPredicting || isPurchasing) return;
+  const handlePurchase = async () => {
+    if (!isAllComplete || isAiPredicting || isPurchasing || !currentUser) return;
+    
+    const unitPrice = lottery.id === 'wg' ? (parseFloat(customAmount) || 0) : 2;
+    const totalPrice = lines.length * unitPrice;
+    
+    if (currentUser.balance < totalPrice) {
+      alert("余额不足，请充值");
+      return;
+    }
+
     setIsPurchasing(true);
-    setTimeout(() => {
+    
+    try {
+      // Use transaction to deduct balance and record purchase
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const userSnap = await transaction.get(userRef);
+        
+        if (!userSnap.exists()) throw "User profile not found";
+        const currentBalance = userSnap.data().balance;
+        if (currentBalance < totalPrice) throw "Insufficient balance";
+        
+        // Deduct balance
+        transaction.update(userRef, { balance: currentBalance - totalPrice });
+        
+        // Add purchase record
+        const purchaseRef = doc(collection(db, 'purchases'));
+        transaction.set(purchaseRef, {
+          uid: currentUser.uid,
+          lotteryId: lottery.id,
+          lotteryName: lottery.name,
+          drawId: currentDraw?.drawId || 'unknown',
+          lines: lines,
+          amount: totalPrice,
+          status: 'pending',
+          timestamp: serverTimestamp()
+        });
+      });
+
       setIsPurchasing(false);
       setPurchased(true);
       
-      // No immediate win simulation - win is determined after draw
       setLines([{ main: [], powerball: null }]);
       setActiveLineIndex(0);
       setTimeout(() => setPurchased(false), 2000);
-    }, 1200);
+    } catch (error) {
+      console.error("Purchase error:", error);
+      setIsPurchasing(false);
+      alert(typeof error === 'string' ? error : "购买失败，请稍后再试");
+    }
   };
 
   const totalLines = lines.length;
@@ -3137,26 +3184,35 @@ const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUs
   const { t } = useContext(LanguageContext);
   const [bets, setBets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentUser) return;
-    const q = query(
-      collection(db, 'purchases'), 
-      where('uid', '==', currentUser.uid),
-      orderBy('timestamp', 'desc'),
-      limit(50)
-    );
-    
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setBets(data);
-      setLoading(false);
-    }, (err) => {
-      console.error("Fetch bits error:", err);
-      setLoading(false);
-    });
+    try {
+      const q = query(
+        collection(db, 'purchases'), 
+        where('uid', '==', currentUser.uid),
+        orderBy('timestamp', 'desc'),
+        limit(50)
+      );
+      
+      const unsub = onSnapshot(q, (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setBets(data);
+        setLoading(false);
+        setError(null);
+      }, (err) => {
+        console.error("Fetch bets error:", err);
+        setError(err.message);
+        setLoading(false);
+      });
 
-    return () => unsub();
+      return () => unsub();
+    } catch (err: any) {
+      console.error("Setup query error:", err);
+      setError(err.message);
+      setLoading(false);
+    }
   }, [currentUser]);
 
   return (
@@ -3170,17 +3226,21 @@ const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUs
 
       {loading ? (
         <div className="flex flex-col items-center py-20 opacity-20">
-           <RotateCcw className="animate-spin mb-4" />
-           <p className="text-[10px] font-black uppercase">Loading History...</p>
+           <p className="text-[10px] font-black uppercase">Loading...</p>
+        </div>
+      ) : error ? (
+        <div className="text-center py-20 bg-danger/5 rounded-3xl border border-dashed border-danger/20 p-6">
+          <p className="text-sm font-bold text-danger mb-2">Error</p>
+          <p className="text-[10px] text-danger/60 break-words">{error}</p>
         </div>
       ) : bets.length === 0 ? (
         <div className="text-center py-20 bg-surface-grey rounded-3xl border border-dashed border-border-grey">
           <p className="text-sm font-bold text-text-muted">暂无投资记录</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {bets.map((bet) => (
-            <div key={bet.id} className="bg-white border border-border-grey rounded-2xl p-4 shadow-sm relative overflow-hidden">
+            <div key={bet.id} className="bg-white border border-border-grey rounded-2xl p-4 shadow-sm relative overflow-hidden text-left">
               {bet.status === 'won' && (
                 <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none">
                   <div className="absolute top-2 -right-6 w-24 py-1 bg-success text-white text-[8px] font-black uppercase text-center rotate-45 shadow-lg">
@@ -3205,44 +3265,45 @@ const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUs
                 </div>
               </div>
 
-              {/* Display Wager Details */}
               <div className="mb-4 bg-surface-grey rounded-xl p-3">
-                <p className="text-[8px] font-black text-text-muted/60 uppercase tracking-tighter mb-2">投注内容</p>
                 {bet.lines ? (
-                  <div className="space-y-1">
-                    {bet.lines.map((line: any, idx: number) => (
-                      <div key={idx} className="flex gap-1 flex-wrap">
-                        {line.main.map((n: number) => (
-                          <span key={idx+n} className="w-5 h-5 rounded-full bg-white border border-border-grey flex items-center justify-center text-[9px] font-black">{n}</span>
-                        ))}
+                  <div className="space-y-2">
+                    {bet.lines.map((line: any, lIdx: number) => (
+                      <div key={`bet-${bet.id}-line-${lIdx}`} className="flex gap-1 flex-wrap">
+                        {line.main?.map((n: number, nIdx: number) => (
+                          <span key={`bet-${bet.id}-line-${lIdx}-n-${nIdx}`} className="w-5 h-5 rounded-full bg-white border border-border-grey flex items-center justify-center text-[9px] font-black shadow-sm">{n}</span>
+                        )) || null}
                         {line.powerball && (
-                          <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[9px] font-black">{line.powerball}</span>
+                          <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[9px] font-black shadow-sm">{line.powerball}</span>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : bet.bets ? (
                   <div className="flex flex-wrap gap-1">
-                    {bet.bets.map((b: any, idx: number) => (
-                      <span key={idx} className="px-2 py-1 bg-white border border-border-grey rounded text-[10px] font-black text-brand-blue">
+                    {bet.bets.map((b: any, bIdx: number) => (
+                      <span key={`bet-${bet.id}-b-${bIdx}`} className="px-2 py-1 bg-white border border-border-grey rounded text-[10px] font-black text-brand-blue shadow-sm">
                         {b.type === 'sum' ? `和值:${b.val}` : b.val} x{b.multiplier || 1}
                       </span>
                     ))}
                   </div>
                 ) : (
-                   <p className="text-[10px] font-bold text-text-main">期号: #{bet.drawId}</p>
+                   <div className="flex items-center gap-2">
+                      <div className="w-1 h-1 rounded-full bg-text-muted/40" />
+                      <p className="text-[10px] font-bold text-text-main opacity-60">期号: #{bet.drawId}</p>
+                   </div>
                 )}
               </div>
 
-              <div className="flex justify-between items-end">
+              <div className="flex justify-between items-end border-t border-border-grey/30 pt-3">
                 <div>
-                  <p className="text-[8px] font-bold text-text-muted uppercase tracking-tighter mb-0.5">投注金额</p>
-                  <p className="text-xs font-black text-text-main">{bet.amount} <span className="text-[8px]">USDT</span></p>
+                  <p className="text-[8px] font-black text-text-muted uppercase tracking-tighter mb-0.5">Investment</p>
+                  <p className="text-sm font-black text-text-main leading-none">{bet.amount} <span className="text-[9px]">USDT</span></p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[8px] font-bold text-text-muted uppercase tracking-tighter mb-0.5">预计奖金</p>
-                  <p className={`text-sm font-black ${bet.status === 'won' ? 'text-success' : 'text-text-main'}`}>
-                    {bet.status === 'won' ? `+${bet.payout || bet.prize}` : (bet.payout || '-')} <span className="text-[8px]">USDT</span>
+                  <p className="text-[8px] font-black text-text-muted uppercase tracking-tighter mb-0.5">Win Return</p>
+                  <p className={`text-base font-black leading-none ${bet.status === 'won' ? 'text-success' : 'text-text-main'}`}>
+                    {bet.status === 'won' ? `+${bet.payout || bet.prize}` : (bet.payout || '-')} <span className="text-[9px]">USDT</span>
                   </p>
                 </div>
               </div>
@@ -4350,7 +4411,7 @@ const AppContent = ({
     } else if (view === 'support') {
       return <SupportView />;
     } else if (view === 'bet_history') {
-      return <BetHistoryView onBack={() => setView('profile')} />;
+      return <BetHistoryView onBack={() => setView('profile')} currentUser={currentUser} />;
     } else if (view === 'transaction_history') {
       return <TransactionHistoryView onBack={() => setView('profile')} />;
     } else if (view === 'notifications') {
@@ -4886,17 +4947,55 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
     }
   };
 
-  const handlePurchase = () => {
-    if (activeBets.length === 0 || isPurchasing) return;
+  const handlePurchase = async () => {
+    if (activeBets.length === 0 || isPurchasing || !currentUser) return;
+    
+    const unitPrice = parseFloat(betAmount) || 10;
+    const totalPrice = activeBets.length * unitPrice;
+    
+    if (currentUser.balance < totalPrice) {
+      alert("余额不足，请充值");
+      return;
+    }
+
     setIsPurchasing(true);
-    setTimeout(() => {
+    
+    try {
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const userSnap = await transaction.get(userRef);
+        
+        if (!userSnap.exists()) throw "User profile not found";
+        const currentBalance = userSnap.data().balance;
+        if (currentBalance < totalPrice) throw "Insufficient balance";
+        
+        // Deduct balance
+        transaction.update(userRef, { balance: currentBalance - totalPrice });
+        
+        // Add purchase record
+        const purchaseRef = doc(collection(db, 'purchases'));
+        transaction.set(purchaseRef, {
+          uid: currentUser.uid,
+          lotteryId: lottery.id,
+          lotteryName: lottery.name,
+          drawId: currentDraw?.drawId || 'unknown',
+          bets: activeBets.map(b => ({ ...b, multiplier: unitPrice / 1 })), // standard multiplier is unit/1
+          amount: totalPrice,
+          status: 'pending',
+          timestamp: serverTimestamp()
+        });
+      });
+
       setIsPurchasing(false);
       setPurchased(true);
       
-      // No immediate win simulation - win is determined after draw
       setActiveBets([]);
       setTimeout(() => setPurchased(false), 2000);
-    }, 1200);
+    } catch (error) {
+      console.error("Purchase error:", error);
+      setIsPurchasing(false);
+      alert(typeof error === 'string' ? error : "购买失败，请稍后再试");
+    }
   };
 
    const getDiceColor = (num: number) => {
