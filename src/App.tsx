@@ -1000,6 +1000,7 @@ interface LotteryDrawState {
   nextDraw: number; // timestamp
   lastResult: number[] | null;
   drawId: string;
+  lastResultTime?: number;
 }
 
 const LotteryContext = createContext<{
@@ -2221,11 +2222,7 @@ const TicketSelection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lot
       setIsPurchasing(false);
       setPurchased(true);
       
-      // Simulate real win chance (e.g., 10% chance for demo)
-      if (Math.random() < 0.1) {
-        onWin();
-      }
-
+      // No immediate win simulation - win is determined after draw
       setLines([{ main: [], powerball: null }]);
       setActiveLineIndex(0);
       setTimeout(() => setPurchased(false), 2000);
@@ -4431,12 +4428,6 @@ export default function App() {
             
             if (config?.scheduled_results?.[finishedDrawId]) {
               res = config.scheduled_results[finishedDrawId];
-              // Clear scheduled result after consumption
-              if (isAdmin) {
-                const newScheduled = { ...config.scheduled_results };
-                delete newScheduled[finishedDrawId];
-                setDoc(doc(db, 'lottery_configs', loto.id), { scheduled_results: newScheduled }, { merge: true }).catch(console.error);
-              }
             } else {
               if (loto.id === 'wg') res = [Math.floor(Math.random() * 10)];
               else if (loto.id === 'f3') res = [Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1];
@@ -4819,38 +4810,6 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
     return () => clearInterval(rollInterval);
   }, [isRolling]);
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          // Generate new draw result
-          const newNums = [
-            Math.floor(Math.random() * 6) + 1,
-            Math.floor(Math.random() * 6) + 1,
-            Math.floor(Math.random() * 6) + 1
-          ];
-          const sum = newNums.reduce((a, b) => a + b, 0);
-          
-          setLastResult(newNums);
-          setHistory(prevHist => {
-            const newId = String((parseInt(prevHist[0]?.id || '100') + 1) % 1000).padStart(3, '0');
-            const newRecord = {
-              id: newId,
-              nums: newNums,
-              sum,
-              isBig: sum >= 11,
-              isOdd: sum % 2 !== 0
-            };
-            return [newRecord, ...prevHist.slice(0, 49)];
-          });
-          return 300; 
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const toggleBet = (type: string, val: any) => {
     const exists = activeBets.find(b => b.type === type && b.val === val);
     if (exists) {
@@ -4867,11 +4826,7 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
       setIsPurchasing(false);
       setPurchased(true);
       
-      // Simulate real win chance (e.g., 20% chance for demo since it's faster game)
-      if (Math.random() < 0.2) {
-        onWin();
-      }
-
+      // No immediate win simulation - win is determined after draw
       setActiveBets([]);
       setTimeout(() => setPurchased(false), 2000);
     }, 1200);
@@ -5196,3 +5151,4 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
     </div>
   );
 };
+
