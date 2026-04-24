@@ -1,0 +1,211 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,700;1,700&family=Space+Grotesk:wght@500;700&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", serif;
+  --font-mono: "Space Grotesk", monospace;
+
+  /* Official Banking Palette */
+  --color-brand-blue: #0056B3;
+  --color-brand-blue-light: #E7F1FF;
+  --color-success: #28A745;
+  --color-danger: #DC3545;
+  --color-surface-grey: #F8F9FA;
+  --color-border-grey: #E9ECEF;
+  --color-text-main: #212529;
+  --color-text-muted: #6C757D;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-text-main font-sans antialiased;
+    background-image: none;
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .banking-card {
+    @apply bg-white border border-border-grey rounded-xl shadow-sm hover:shadow-md transition-shadow;
+  }
+  
+  .badge-official {
+    @apply bg-brand-blue-light text-brand-blue text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1;
+  }
+
+  .crystal-sphere-blue {
+    background: radial-gradient(circle at 30% 30%, #5ba4ff, #0056B3 80%);
+    box-shadow: 
+      inset -4px -4px 10px rgba(0,0,0,0.4), 
+      inset 4px 4px 10px rgba(255,255,255,0.3),
+      0 8px 15px rgba(0,86,179,0.3);
+    position: relative;
+    overflow: hidden;
+  }
+  .crystal-sphere-blue::after {
+    content: '';
+    position: absolute;
+    top: 10%;
+    left: 15%;
+    width: 35%;
+    height: 35%;
+    background: radial-gradient(circle, rgba(255,255,255,0.7), transparent 70%);
+    border-radius: 50%;
+    filter: blur(1px);
+  }
+
+  .crystal-sphere-red {
+    background: radial-gradient(circle at 35% 35%, #ff7675, #d63031 85%);
+    box-shadow: 
+      inset -4px -4px 12px rgba(0,0,0,0.45), 
+      inset 4px 4px 12px rgba(255,255,255,0.25),
+      0 10px 20px rgba(214,48,49,0.25);
+    position: relative;
+    overflow: hidden;
+  }
+  .crystal-sphere-red::after {
+    content: '';
+    position: absolute;
+    top: 12%;
+    left: 18%;
+    width: 32%;
+    height: 32%;
+    background: radial-gradient(circle, rgba(255,255,255,0.8), transparent 75%);
+    border-radius: 50%;
+    filter: blur(0.5px);
+  }
+
+  .crystal-sphere-white {
+    background: radial-gradient(circle at 35% 35%, #ffffff, #f1f2f6 90%);
+    box-shadow: 
+      inset -3px -3px 8px rgba(0,0,0,0.04), 
+      inset 3px 3px 10px rgba(255,255,255,1),
+      0 8px 16px rgba(0,0,0,0.06);
+    position: relative;
+    overflow: hidden;
+  }
+  .crystal-sphere-white::after {
+    content: '';
+    position: absolute;
+    top: 12%;
+    left: 18%;
+    width: 32%;
+    height: 32%;
+    background: radial-gradient(circle, rgba(255,255,255,1), transparent 80%);
+    border-radius: 50%;
+    filter: blur(0.5px);
+  }
+
+  .crystal-sphere-gold {
+    background: radial-gradient(circle at 30% 30%, #fff7ad, #f9ca24 70%, #d48e00 95%);
+    box-shadow: 
+      inset -4px -4px 10px rgba(0,0,0,0.3), 
+      inset 4px 4px 10px rgba(255,255,255,0.4),
+      0 8px 15px rgba(212, 142, 0, 0.3);
+    position: relative;
+    overflow: hidden;
+  }
+  .crystal-sphere-gold::after {
+    content: '';
+    position: absolute;
+    top: 10%;
+    left: 15%;
+    width: 35%;
+    height: 35%;
+    background: radial-gradient(circle, rgba(255,255,255,0.9), transparent 75%);
+    border-radius: 50%;
+    filter: blur(1.5px);
+  }
+
+  .crystal-sphere-cyan {
+    background: radial-gradient(circle at 35% 35%, #00f2fe, #4facfe 75%, #00d2ff 95%);
+    box-shadow: 
+      inset -4px -4px 12px rgba(0,0,0,0.3), 
+      inset 4px 4px 10px rgba(255,255,255,0.4),
+      0 0 20px rgba(0, 242, 254, 0.4);
+    position: relative;
+    overflow: hidden;
+  }
+  .crystal-sphere-cyan::after {
+    content: '';
+    position: absolute;
+    top: 15%;
+    left: 15%;
+    width: 30%;
+    height: 30%;
+    background: white;
+    border-radius: 50%;
+    filter: blur(2px);
+    opacity: 0.8;
+  }
+
+  @keyframes light-trail {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .animate-light-trail {
+    background-size: 200% 200%;
+    animation: light-trail 3s linear infinite;
+  }
+
+  @keyframes shimmer {
+    100% { transform: translateX(100%); }
+  }
+  .animate-shimmer {
+    animation: shimmer 1.5s infinite;
+  }
+
+  .animate-spin-slow {
+    animation: spin 10s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)];
+  }
+
+  @keyframes confetti-fall {
+    0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
+  }
+
+  .animate-confetti {
+    animation: confetti-fall 4s linear infinite;
+  }
+
+  /* Remove number input arrows */
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type=number] {
+    -moz-appearance: textfield;
+  }
+
+  /* Wingo Specialized Styles */
+  .wingo-green {
+    @apply border-2 border-green-500 bg-green-50 text-green-700 shadow-sm;
+  }
+  .wingo-red {
+    @apply border-2 border-red-500 bg-red-50 text-red-700 shadow-sm;
+  }
+  .wingo-violet {
+    @apply border-2 border-purple-500 bg-purple-50 text-purple-700 shadow-sm;
+  }
+  .wingo-split-red-violet {
+    background: linear-gradient(135deg, #ef4444 50%, #a855f7 50%);
+    @apply border-2 border-white/50 text-white shadow-sm;
+  }
+  .wingo-split-green-violet {
+    background: linear-gradient(135deg, #22c55e 50%, #a855f7 50%);
+    @apply border-2 border-white/50 text-white shadow-sm;
+  }
+}

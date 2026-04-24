@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information including referral data and balance.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "invite_code": { "type": "string", "description": "Unique referral code for this user." },
+        "referrer_id": { "type": "string", "description": "UID of the user who referred this person." },
+        "balance": { "type": "number", "default": 0, "description": "User's current account balance in USDT." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "invite_code", "balance", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction Log",
+      "description": "Records of financial movements like deposits, withdrawals, and commissions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Owner of the transaction." },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "commission", "purchase"] },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed", "rejected"] },
+        "order_id": { "type": "string" },
+        "source_uid": { "type": "string", "description": "If commission, the UID of the payer." },
+        "referrer_id": { "type": "string", "description": "UID of the referrer who can view this transaction for accounting." },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "type", "amount", "status", "timestamp"]
+    },
+    "Purchase": {
+      "title": "Lottery Purchase",
+      "description": "Details of a lottery ticket purchase including selected numbers and results.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "lotteryId": { "type": "string" },
+        "drawId": { "type": "string" },
+        "numbers": { "type": "array" },
+        "amount": { "type": "number" },
+        "winAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "won", "lost"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "lotteryId", "numbers", "amount", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles indexed by their Firebase Auth UID."
+    },
+    "admins/{userId}": {
+      "schema": { "type": "object", "properties": { "role": { "type": "string" } } },
+      "description": "Designates users as administrators."
+    },
+    "transactions/{txId}": {
+      "schema": "Transaction",
+      "description": "Transaction logs for audit and history."
+    },
+    "purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "Detailed lottery ticket purchase records."
+    },
+    "settings/global": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "support_link": { "type": "string" },
+          "trc20_address": { "type": "string" },
+          "trc20_qr": { "type": "string" },
+          "erc20_address": { "type": "string" },
+          "erc20_qr": { "type": "string" }
+        }
+      },
+      "description": "Global application configuration settings."
+    },
+    "lottery_configs/{lotteryId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "prizes": {
+            "type": "object",
+            "properties": {
+              "first": { "type": "number" },
+              "second": { "type": "number" },
+              "third": { "type": "number" }
+            }
+          },
+          "manual_result": { "type": "array" }
+        }
+      },
+      "description": "Configuration and controls for each lottery type."
+    },
+    "invite_codes/{code}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "uid": { "type": "string" }
+        }
+      },
+      "description": "A lookup table to ensure invite code uniqueness and resolve codes to UIDs."
+    }
+  }
+}

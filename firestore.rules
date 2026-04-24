@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- User Validation ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'invite_code', 'balance', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.invite_code is string && data.invite_code.size() >= 6 &&
+             data.balance is number && data.balance >= 0 &&
+             data.createdAt == request.time;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || (resource.data.referrer_id == request.auth.uid) || isAdmin());
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) && (
+        // Action: Basic Profile Update
+        (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL'])) ||
+        // Action: Balance Change
+        (incoming().diff(existing()).affectedKeys().hasOnly(['balance']) && incoming().balance >= 0)
+      )) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['uid', 'type', 'amount', 'status', 'timestamp']) &&
+             data.uid is string &&
+             data.type in ['deposit', 'withdrawal', 'commission', 'purchase'] &&
+             data.amount is number &&
+             data.status in ['pending', 'completed', 'failed', 'rejected'] &&
+             data.timestamp == request.time;
+    }
+
+    match /transactions/{txId} {
+      allow read: if isSignedIn() && (resource.data.uid == request.auth.uid || resource.data.referrer_id == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidTransaction(incoming());
+      allow update, delete: if isAdmin();
+    }
+
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (request.auth.token.email == 'oopqwe001@gmail.com');
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /lottery_configs/{lotteryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /lottery_history/{historyId} {
+      allow read: if true;
+      // Allow creation of history records if signed in (first client to update stores it)
+      // Or restrict to admin if you only want the admin's browser to officially "draw"
+      // Given this architecture, we allow anyone to create but only admin to update/delete
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /invite_codes/{code} {
+      allow get: if true;
+      allow create: if isSignedIn() && incoming().uid == request.auth.uid;
+    }
+  }
+}
