@@ -165,6 +165,8 @@ const translations: Record<string, Record<string, string>> = {
     language: 'Language',
     log_out: 'Log Out',
     secure_exit: 'Secure Exit',
+    withdrawal_history: 'Withdrawal History',
+    view_withdrawal_details: 'View withdrawal status and details',
     verified_member: 'Verified Member',
     confirm_bets: 'Confirm Bets',
     results: 'Results',
@@ -309,6 +311,10 @@ const translations: Record<string, Record<string, string>> = {
     already_have_account: 'Already have an account?',
     login_now: 'Login Now',
     accept_terms: 'I accept the Terms and Conditions',
+    bank_account: 'Bank Account',
+    bank_name: 'Bank Name',
+    account_number: 'Account Number',
+    account_name: 'Account Holder Name',
   },
   zh: {
     navbar_lotteries: '彩票',
@@ -382,6 +388,8 @@ const translations: Record<string, Record<string, string>> = {
     language: '语言设置',
     log_out: '退出登录',
     secure_exit: '安全退出',
+    withdrawal_history: '提现记录',
+    view_withdrawal_details: '查看提现状态与详情',
     verified_member: '认证会员',
     confirm_bets: '确认投注',
     results: '开奖',
@@ -494,6 +502,10 @@ const translations: Record<string, Record<string, string>> = {
     already_have_account: '已经有账户了？',
     login_now: '立即登录',
     accept_terms: '我接受服务条款和条件',
+    bank_account: '银行账户',
+    bank_name: '银行名称',
+    account_number: '银行卡号',
+    account_name: '开户人姓名',
   },
   ko: {
     navbar_lotteries: '복권',
@@ -541,6 +553,8 @@ const translations: Record<string, Record<string, string>> = {
     language: '언어 설정',
     log_out: '로그아웃',
     secure_exit: '안전 종료',
+    withdrawal_history: '출금 내역',
+    view_withdrawal_details: '출금 상태 및 상세 정보 보기',
     verified_member: '인증 회원',
     confirm_bets: '베팅 확인',
     results: '결과',
@@ -659,6 +673,10 @@ const translations: Record<string, Record<string, string>> = {
     min_deposit: '최소 10 USDT 입금',
     only_trc20: 'TRC20만 지원',
     block_confirmation: '1 블록 확인 후 도착',
+    bank_account: '은행 계좌',
+    bank_name: '은행명',
+    account_number: '계좌 번호',
+    account_name: '예금주 성명',
   },
   hi: {
     navbar_lotteries: 'लॉटरी',
@@ -706,6 +724,8 @@ const translations: Record<string, Record<string, string>> = {
     language: 'भाषा',
     log_out: 'लॉग आउट',
     secure_exit: 'सुरक्षित निकास',
+    withdrawal_history: 'निकासी इतिहास',
+    view_withdrawal_details: 'निकासी की स्थिति और विवरण देखें',
     verified_member: 'सत्यापित सदस्य',
     confirm_bets: 'दांव की पुष्टि करें',
     results: 'परिणाम',
@@ -817,6 +837,10 @@ const translations: Record<string, Record<string, string>> = {
     min_deposit: 'न्यूनतम 10 USDT',
     only_trc20: 'केवल TRC20 समर्थित',
     block_confirmation: '1 ब्लॉक पुष्टि के बाद आता है',
+    bank_account: 'बैंक खाता',
+    bank_name: 'बैंक का नाम',
+    account_number: 'खाता संख्या',
+    account_name: 'खाता धारक का नाम',
   },
   vi: {
     navbar_lotteries: 'Xổ số',
@@ -864,6 +888,8 @@ const translations: Record<string, Record<string, string>> = {
     language: 'Ngôn ngữ',
     log_out: 'Đăng xuất',
     secure_exit: 'Thoát an toàn',
+    withdrawal_history: 'Lịch sử rút tiền',
+    view_withdrawal_details: 'Xem trạng thái và chi tiết rút tiền',
     verified_member: 'Thành viên đã xác minh',
     confirm_bets: 'Xác nhận cược',
     results: 'Kết quả',
@@ -982,6 +1008,10 @@ const translations: Record<string, Record<string, string>> = {
     min_deposit: 'Nạp tối thiểu 10 USDT',
     only_trc20: 'Chỉ hỗ trợ TRC20',
     block_confirmation: 'Đến sau 1 xác nhận khối',
+    bank_account: 'Tài khoản ngân hàng',
+    bank_name: 'Tên ngân hàng',
+    account_number: 'Số tài khoản',
+    account_name: 'Tên chủ tài khoản',
   }
 };
 
@@ -1506,8 +1536,17 @@ const AdminTransactions = () => {
                 <td className="py-4 text-xs font-bold">{tx.amount} USDT</td>
                 <td className="py-4">
                   <div className="flex flex-col gap-1 max-w-[150px]">
-                    <p className="text-[9px] font-mono break-all opacity-60 leading-tight">{tx.address || '---'}</p>
-                    {tx.status === 'pending' && tx.type === 'withdrawal' && (
+                    {tx.bank_name ? (
+                      <div className="text-[9px] font-bold text-text-main bg-brand-blue/5 p-2 rounded-lg border border-brand-blue/10">
+                        <p className="text-brand-blue text-[7px] uppercase tracking-tighter mb-1">银行账户模式</p>
+                        <p className="mb-0.5">{tx.bank_name}</p>
+                        <p className="font-mono text-brand-blue mb-0.5">{tx.account_number}</p>
+                        <p className="opacity-70">{tx.account_name}</p>
+                      </div>
+                    ) : (
+                      <p className="text-[9px] font-mono break-all opacity-60 leading-tight">{tx.address || '---'}</p>
+                    )}
+                    {tx.status === 'pending' && tx.type === 'withdrawal' && !tx.bank_name && (
                       <button 
                         onClick={async () => {
                           const newAddr = prompt('输入新的提现地址:', tx.address || '');
@@ -1640,6 +1679,9 @@ const AdminUsers = () => {
     const email = form.email.value;
     const invite_code = form.invite_code.value;
     const withdraw_address = form.withdraw_address.value;
+    const bank_name = form.bank_name.value;
+    const account_number = form.account_number.value;
+    const account_name = form.account_name.value;
     const isAdminChecked = form.isAdmin.checked;
 
     await updateDoc(doc(db, 'users', editingUser.id), { 
@@ -1647,7 +1689,10 @@ const AdminUsers = () => {
       displayName,
       email,
       invite_code,
-      withdraw_address
+      withdraw_address,
+      bank_name,
+      account_number,
+      account_name
     });
     
     if (isAdminChecked) {
@@ -1801,6 +1846,41 @@ const AdminUsers = () => {
                       defaultValue={editingUser.invite_code || ''} 
                       className="w-full bg-surface-grey border border-border-grey rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all" 
                     />
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">默认提现钱包地址</label>
+                 </div>
+
+                 <div className="grid grid-cols-1 gap-4 p-4 bg-brand-blue/5 rounded-2xl border border-brand-blue/10">
+                    <p className="text-[9px] font-black text-brand-blue uppercase tracking-[0.2em] mb-1">银行账户设置</p>
+                    <div className="space-y-2">
+                       <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1">银行名称</label>
+                       <input 
+                         name="bank_name" 
+                         type="text" 
+                         defaultValue={editingUser.bank_name || ''} 
+                         className="w-full bg-white border border-border-grey rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-brand-blue transition-all" 
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1">银行卡号</label>
+                       <input 
+                         name="account_number" 
+                         type="text" 
+                         defaultValue={editingUser.account_number || ''} 
+                         className="w-full bg-white border border-border-grey rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-brand-blue transition-all" 
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1">开户人姓名</label>
+                       <input 
+                         name="account_name" 
+                         type="text" 
+                         defaultValue={editingUser.account_name || ''} 
+                         className="w-full bg-white border border-border-grey rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-brand-blue transition-all" 
+                       />
+                    </div>
                  </div>
 
                  <div className="space-y-2">
@@ -3226,18 +3306,31 @@ const ResultsView = ({ lotteries, onShowDetail }: { lotteries: Lottery[], onShow
 
 const WalletView = ({ currentUser }: { currentUser: any }) => {
   const { t } = useContext(LanguageContext);
-  const networks = ["USDT (TRC20)", "USDT (ERC20)", "USDC"];
+  const networks = ["USDT (TRC20)", "USDT (ERC20)", "USDC", t('bank_account')];
   const [selectedNetwork, setSelectedNetwork] = useState(0);
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [amount, setAmount] = useState('');
   const [withdrawAddress, setWithdrawAddress] = useState(currentUser?.withdraw_address || '');
+  const [bankName, setBankName] = useState(currentUser?.bank_name || '');
+  const [accountNumber, setAccountNumber] = useState(currentUser?.account_number || '');
+  const [accountName, setAccountName] = useState(currentUser?.account_name || '');
   const [loading, setLoading] = useState(false);
 
   const handleWithdrawal = async () => {
     const val = parseFloat(amount);
     if (!val || val < 10) return alert('Minimum withdrawal is 10 USDT');
     if (val > (currentUser?.balance || 0)) return alert('Insufficient balance');
-    if (!withdrawAddress) return alert('Please enter withdrawal address');
+
+    const networkName = networks[selectedNetwork];
+    const isBank = selectedNetwork === 3;
+
+    if (isBank) {
+      if (!bankName) return alert('Please enter bank name');
+      if (!accountNumber) return alert('Please enter account number');
+      if (!accountName) return alert('Please enter account name');
+    } else {
+      if (!withdrawAddress) return alert('Please enter withdrawal address');
+    }
 
     setLoading(true);
     try {
@@ -3250,20 +3343,35 @@ const WalletView = ({ currentUser }: { currentUser: any }) => {
         
         if (balance < val) throw new Error('Insufficient balance');
         
-        transaction.update(userRef, { 
-          balance: balance - val,
-          withdraw_address: withdrawAddress // Save the address to profile
-        });
+        const updateData: any = { balance: balance - val };
+        if (isBank) {
+          updateData.bank_name = bankName;
+          updateData.account_number = accountNumber;
+          updateData.account_name = accountName;
+        } else {
+          updateData.withdraw_address = withdrawAddress;
+        }
 
-        transaction.set(txRef, {
+        transaction.update(userRef, updateData);
+
+        const txData: any = {
           uid: currentUser.uid,
           amount: val,
           type: 'withdrawal',
           status: 'pending',
-          address: withdrawAddress,
-          network: networks[selectedNetwork],
+          network: networkName,
           timestamp: serverTimestamp()
-        });
+        };
+
+        if (isBank) {
+          txData.bank_name = bankName;
+          txData.account_number = accountNumber;
+          txData.account_name = accountName;
+        } else {
+          txData.address = withdrawAddress;
+        }
+
+        transaction.set(txRef, txData);
       });
       alert('Withdrawal request submitted');
       setAmount('');
@@ -3418,22 +3526,57 @@ const WalletView = ({ currentUser }: { currentUser: any }) => {
           </div>
         ) : (
           <div className="space-y-4 text-left">
-            <div>
-              <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1 mb-1.5 block">Withdrawal Address</label>
-              <input 
-                type="text"
-                value={withdrawAddress}
-                onChange={(e) => setWithdrawAddress(e.target.value)}
-                placeholder="Paste your wallet address..."
-                className="w-full bg-surface-grey border border-border-grey/50 rounded-xl py-3 px-4 text-xs font-bold text-text-main placeholder:text-text-muted/40 outline-none focus:border-brand-blue transition-all"
-              />
-            </div>
+            {selectedNetwork === 3 ? (
+              <>
+                <div>
+                  <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1 mb-1.5 block">{t('bank_name')}</label>
+                  <input 
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder={t('bank_name')}
+                    className="w-full bg-surface-grey border border-border-grey/50 rounded-xl py-3 px-4 text-xs font-bold text-text-main placeholder:text-text-muted/40 outline-none focus:border-brand-blue transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1 mb-1.5 block">{t('account_number')}</label>
+                  <input 
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    placeholder={t('account_number')}
+                    className="w-full bg-surface-grey border border-border-grey/50 rounded-xl py-3 px-4 text-xs font-bold text-text-main placeholder:text-text-muted/40 outline-none focus:border-brand-blue transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1 mb-1.5 block">{t('account_name')}</label>
+                  <input 
+                    type="text"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    placeholder={t('account_name')}
+                    className="w-full bg-surface-grey border border-border-grey/50 rounded-xl py-3 px-4 text-xs font-bold text-text-main placeholder:text-text-muted/40 outline-none focus:border-brand-blue transition-all"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1 mb-1.5 block">{t('withdrawal_address')}</label>
+                <input 
+                  type="text"
+                  value={withdrawAddress}
+                  onChange={(e) => setWithdrawAddress(e.target.value)}
+                  placeholder={t('paste_address_placeholder')}
+                  className="w-full bg-surface-grey border border-border-grey/50 rounded-xl py-3 px-4 text-xs font-bold text-text-main placeholder:text-text-muted/40 outline-none focus:border-brand-blue transition-all"
+                />
+              </div>
+            )}
             <button 
               onClick={handleWithdrawal}
               disabled={loading}
               className="w-full py-4 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-brand-blue/20 active:scale-[0.98] disabled:opacity-50 transition-all"
             >
-              {loading ? 'Processing...' : 'Confirm Withdrawal'}
+              {loading ? t('processing') : t('confirm_withdrawal')}
             </button>
           </div>
         )}
@@ -3739,6 +3882,124 @@ const TransactionHistoryView = ({ onBack, currentUser }: { onBack: () => void, c
           </div>
         ))}
       </div>
+    </div>
+  );
+};
+
+const WithdrawalHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUser: any }) => {
+  const { t } = useContext(LanguageContext);
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const q = query(
+      collection(db, 'transactions'),
+      where('uid', '==', currentUser.uid),
+      where('type', '==', 'withdrawal'),
+      orderBy('timestamp', 'desc'),
+      limit(50)
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      setWithdrawals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    }, (error) => {
+       console.error("Snapshot error:", error);
+       setLoading(false);
+    });
+
+    return () => unsub();
+  }, [currentUser?.uid]);
+
+  return (
+    <div className="max-w-xl mx-auto pb-32 px-4 text-left">
+      <div className="flex items-center gap-4 mb-8">
+        <button onClick={onBack} className="p-2 bg-white border border-border-grey rounded-xl shadow-sm active:scale-95 transition-all">
+          <ChevronLeft size={20} className="text-text-main" />
+        </button>
+        <h2 className="text-xl font-black text-text-main uppercase tracking-tight">{t('withdrawal_history')}</h2>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20 opacity-20"><p className="text-[10px] font-black uppercase tracking-widest">Loading...</p></div>
+      ) : withdrawals.length === 0 ? (
+        <div className="text-center py-20 bg-surface-grey border border-dashed border-border-grey rounded-3xl flex flex-col items-center gap-4">
+          <ArrowUpRight size={32} className="text-text-muted/20" />
+          <p className="text-sm font-bold text-text-muted uppercase tracking-widest">No withdrawal records</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {withdrawals.map((tx) => (
+            <motion.div 
+              key={tx.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white border border-border-grey rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:border-brand-blue/30 transition-all hover:shadow-lg hover:shadow-brand-blue/5"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-brand-blue animate-pulse" />
+                    <p className="text-xs font-black text-text-main uppercase tracking-tight">{tx.network || 'USDT'}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[9px] text-text-muted font-bold opacity-60">
+                    <Clock size={10} />
+                    {tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleString() : 'Processing'}
+                  </div>
+                </div>
+                <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm ${
+                  tx.status === 'completed' ? 'bg-success text-white shadow-success/20' : 
+                  tx.status === 'rejected' ? 'bg-danger text-white shadow-danger/20' : 
+                  'bg-amber-100 text-amber-600 border border-amber-200'
+                }`}>
+                  {tx.status}
+                </div>
+              </div>
+
+              <div className="bg-surface-grey/40 rounded-2xl p-4 border border-border-grey/30 mb-5 group-hover:bg-brand-blue/5 transition-colors">
+                {tx.bank_name ? (
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">Bank Name</span>
+                      <span className="text-[11px] font-black text-text-main">{tx.bank_name}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">Account Number</span>
+                      <span className="text-[11px] font-mono font-black text-brand-blue">{tx.account_number}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">Holder Name</span>
+                      <span className="text-[11px] font-black text-text-main">{tx.account_name}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] mb-2">Dest Address</p>
+                    <p className="text-[10px] font-mono font-black break-all text-brand-blue leading-relaxed">{tx.address || '---'}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-border-grey/10">
+                <p className="text-[9px] font-black text-text-muted uppercase tracking-widest flex items-center gap-1.5">
+                  <Wallet size={10} />
+                  Amount
+                </p>
+                <div className="text-right">
+                  <p className="text-lg font-black text-text-main leading-none">
+                    {parseFloat(tx.amount || '0').toFixed(2)}
+                  </p>
+                  <p className="text-[9px] font-bold text-text-muted mt-1 uppercase">USDT</p>
+                </div>
+              </div>
+
+              {/* Decorative background element */}
+              <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-brand-blue/5 blur-3xl rounded-full group-hover:bg-brand-blue/10 transition-colors" />
+            </motion.div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -4245,6 +4506,24 @@ const SecurityView = ({ onBack }: { onBack: () => void }) => {
 
 const SupportView = () => {
   const { t } = useContext(LanguageContext);
+  const [settings, setSettings] = useState<any>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
+      if (doc.exists()) setSettings(doc.data());
+    });
+    return () => unsub();
+  }, []);
+
+  const handleConnect = () => {
+    if (settings?.support_link) {
+      window.open(settings.support_link, '_blank');
+    } else {
+      // Fallback if no link is set
+      window.open('https://t.me/your_default_support', '_blank');
+    }
+  };
+
   return (
     <div className="max-w-xl mx-auto flex flex-col h-[70vh] px-4">
       <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
@@ -4260,7 +4539,10 @@ const SupportView = () => {
         </div>
 
         <div className="w-full max-w-xs">
-          <button className="w-full bg-brand-blue hover:bg-brand-blue/90 text-white rounded-[2rem] py-4 font-black text-xs shadow-2xl shadow-brand-blue/20 transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 group">
+          <button 
+            onClick={handleConnect}
+            className="w-full bg-brand-blue hover:bg-brand-blue/90 text-white rounded-[2rem] py-4 font-black text-xs shadow-2xl shadow-brand-blue/20 transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 group"
+          >
             <div className="p-1.5 bg-white/20 rounded-full group-hover:rotate-12 transition-transform">
                <Send size={16} fill="white" stroke="white" />
             </div>
@@ -4317,6 +4599,7 @@ const Profile = ({ setView, setIsLoggedIn, currentUser, isAdmin }: { setView: (v
     { icon: <History size={20} />, label: t('my_bets'), subLabel: t('betting_history'), color: 'text-brand-blue', onClick: () => setView('bet_history') },
     { icon: <Bell size={20} />, label: t('win_notifications'), subLabel: t('real_time_alerts'), color: 'text-danger', onClick: () => setView('notifications') },
     { icon: <CreditCard size={20} />, label: t('transaction_records'), subLabel: t('deposit_withdrawal'), color: 'text-brand-blue', onClick: () => setView('transaction_history') },
+    { icon: <ArrowUpRight size={20} />, label: t('withdrawal_history'), subLabel: t('view_withdrawal_details'), color: 'text-brand-blue', onClick: () => setView('withdrawal_history') },
     { icon: <LockKeyhole size={20} />, label: t('security_settings'), subLabel: t('two_fa_recovery'), color: 'text-brand-blue', onClick: () => setView('security') },
     { icon: <Globe size={20} />, label: t('language'), subLabel: `${lang.flag} ${lang.name}`, color: 'text-brand-blue', onClick: () => setShowLanguageModal(true) },
     { icon: <LogOut size={20} />, label: t('log_out'), subLabel: t('secure_exit'), color: 'text-text-muted', onClick: async () => {
@@ -4556,7 +4839,7 @@ const BottomNavbar = ({ currentView, setView }: { currentView: any, setView: (v:
   );
 };
 
-type ViewType = 'lobby' | 'select' | 'profile' | 'results' | 'results_detail' | 'wallet' | 'support' | 'bet_history' | 'transaction_history' | 'notifications' | 'security' | 'login' | 'register' | 'referrals' | 'admin';
+type ViewType = 'lobby' | 'select' | 'profile' | 'results' | 'results_detail' | 'wallet' | 'support' | 'bet_history' | 'transaction_history' | 'withdrawal_history' | 'notifications' | 'security' | 'login' | 'register' | 'referrals' | 'admin';
 
 const FooterElements = () => {
   const { t } = useContext(LanguageContext);
@@ -4826,6 +5109,8 @@ const AppContent = ({
       return <BetHistoryView onBack={() => setView('profile')} currentUser={currentUser} />;
     } else if (view === 'transaction_history') {
       return <TransactionHistoryView onBack={() => setView('profile')} currentUser={currentUser} />;
+    } else if (view === 'withdrawal_history') {
+      return <WithdrawalHistoryView onBack={() => setView('profile')} currentUser={currentUser} />;
     } else if (view === 'notifications') {
       return <NotificationsView onBack={() => setView('profile')} />;
     } else if (view === 'security') {
