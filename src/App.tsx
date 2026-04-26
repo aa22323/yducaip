@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, createContext, useContext, useMemo } from 'react';
+import React, { useState, useEffect, createContext, useContext, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, 
@@ -59,7 +59,8 @@ import {
   Settings2,
   XCircle,
   Ticket,
-  Shield
+  Shield,
+  AlertCircle
 } from 'lucide-react';
 
 import { 
@@ -77,6 +78,7 @@ import {
   deleteDoc,
   orderBy,
   limit,
+  increment,
   serverTimestamp 
 } from 'firebase/firestore';
 import { 
@@ -410,7 +412,7 @@ const translations: Record<string, Record<string, string>> = {
     special_zone: '特别号码区',
     quick: '机选',
     analyzing: '分析中...',
-    draw_period: '开奖期号',
+    draw_period: 'DRAW #',
     last_win: '上期开奖',
     time_left: '剩余时间',
     winners: '中奖人数',
@@ -418,7 +420,7 @@ const translations: Record<string, Record<string, string>> = {
     verified_winner: '经认证的获胜者凭证',
     secure_verified: '安全交易已验证',
     previous_result: '上期结果',
-    sum: '和值',
+    sum: 'SUM',
     live_trend_analysis: '实时走势分析',
     lobby: '大厅',
     live: '实时',
@@ -437,7 +439,7 @@ const translations: Record<string, Record<string, string>> = {
     withdrawal_safety_text: '提现限制：50,000 USDT • 为了安全需要 2FA • 适用网络费用',
     win_footer_text: '于 {{lottery}} #{{id}}',
     in_label: '于',
-    draw_id_label: '期号',
+    draw_id_label: 'DRAW #',
     my_referrals: '下级代理',
     referral_dashboard: '代理中心',
     downline_users: '下级用户',
@@ -447,14 +449,14 @@ const translations: Record<string, Record<string, string>> = {
     sub_accounts: '下级成员',
     footer_copyright: '© 2026 Global Lotto Bank。所有彩票品牌均为其各自所有者的商标。',
     smart_follower: '智能趋势跟随',
-    sum_betting_grid: '和值投注表',
+    sum_betting_grid: 'SUM BETTING GRID',
     odd_multipliers: '赔率乘率',
     ends_in_timer: '离截止',
     older_draw_data: '加载更早的开奖数据',
-    big_desc: '和值 11-18',
-    small_desc: '和值 3-10',
-    odd_desc: '和值 1, 3, 5...',
-    even_desc: '和值 2, 4, 6...',
+    big_desc: 'SUM 11-18',
+    small_desc: 'SUM 3-10',
+    odd_desc: 'SUM 1, 3, 5...',
+    even_desc: 'SUM 2, 4, 6...',
     balance_label: '余额:',
     region_us: '美国',
     region_jp: '日本',
@@ -1014,9 +1016,12 @@ interface LotteryDrawState {
 const LotteryContext = createContext<{
   drawStates: Record<string, LotteryDrawState>;
   lotteryConfigs: any[];
+  lotteryHistory: Record<string, any[]>;
+  settleBets?: (lotoId: string, drawId: string, result: number[]) => Promise<void>;
 }>({
   drawStates: {},
   lotteryConfigs: [],
+  lotteryHistory: {},
 });
 
 const generateInviteCode = () => {
@@ -1026,6 +1031,8 @@ const generateInviteCode = () => {
 interface TicketLine {
   main: number[];
   powerball: number | null;
+  type?: string;
+  val?: string | number;
 }
 
 interface Lottery {
@@ -1042,22 +1049,31 @@ interface Lottery {
   drawInterval: number; // Seconds
 }
 
+const generateResult = (lotoId: string): number[] => {
+  if (lotoId === 'wg') return [Math.floor(Math.random() * 10)];
+  if (lotoId === 'f3') return [Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1];
+  if (lotoId === 'pb' || lotoId === 'mm') return Array.from({ length: 6 }).map((_, i) => i === 5 ? Math.floor(Math.random() * 26) + 1 : Math.floor(Math.random() * 69) + 1);
+  if (lotoId === 'l7') return Array.from({ length: 7 }).map(() => Math.floor(Math.random() * 37) + 1);
+  if (lotoId === 'kp') return Array.from({ length: 10 }).map(() => Math.floor(Math.random() * 80) + 1);
+  return Array.from({ length: 5 }).map(() => Math.floor(Math.random() * 10));
+};
+
 const lotteries: Lottery[] = [
   { id: 'pb', name: 'Powerball', region: 'region_us', jackpot: '945M', currencySymbol: '$', color: 'red', logoPlaceholder: 'P', flag: '🇺🇸', tag: 'Hot', drawInterval: 86400 },
   { id: 'mm', name: 'Mega Millions', region: 'region_us', jackpot: '1.2B', currencySymbol: '$', color: 'orange', logoPlaceholder: 'MM', flag: '🇺🇸', tag: 'Gigantic', drawInterval: 86400 },
   { id: 'wg', name: 'Wingo 5M', region: 'Rapid', jackpot: '9,000x', currencySymbol: '$', color: 'green', logoPlaceholder: 'WG', flag: '🚦', specialDisplay: 'wingo', tag: 'New', drawInterval: 300 },
-  { id: 'l7', name: 'LOTO 7', region: 'region_jp', jackpot: '1.0B', currencySymbol: '¥', color: 'blue', logoPlaceholder: '7', flag: '🇯🇵', tag: 'Weekly', drawInterval: 604800 },
-  { id: 'f3', name: 'Fast 3', region: 'Rapid', jackpot: '10,000x', currencySymbol: '$', color: 'red', logoPlaceholder: 'F3', flag: '🎲', specialDisplay: 'fast3', tag: 'Hot', drawInterval: 90 },
-  { id: 'bh', name: 'Bitcoin Hash', region: 'Virtual', jackpot: '2,400.00 BTC', currencySymbol: '₿', color: 'cyan', logoPlaceholder: 'HASH', flag: '⚡', specialDisplay: 'hash', tag: 'Live', drawInterval: 600 },
-  { id: 'em', name: 'EuroMillions', region: 'region_eu', jackpot: '190M', currencySymbol: '€', color: 'indigo', logoPlaceholder: 'EM', flag: '🇪🇺', drawInterval: 172800 },
+  { id: 'l7', name: 'LOTO 7', region: 'region_jp', jackpot: '1.0B', currencySymbol: '¥', color: 'blue', logoPlaceholder: '7', flag: '🇯🇵', tag: 'Weekly', drawInterval: 86400 },
+  { id: 'f3', name: 'Fast 3', region: 'Rapid', jackpot: '10,000x', currencySymbol: '$', color: 'red', logoPlaceholder: 'F3', flag: '🎲', specialDisplay: 'fast3', tag: 'Hot', drawInterval: 300 },
+  { id: 'bh', name: 'Bitcoin Hash', region: 'Virtual', jackpot: '2,400.00 BTC', currencySymbol: '₿', color: 'cyan', logoPlaceholder: 'HASH', flag: '⚡', specialDisplay: 'hash', tag: 'Live', drawInterval: 300 },
+  { id: 'em', name: 'EuroMillions', region: 'region_eu', jackpot: '190M', currencySymbol: '€', color: 'indigo', logoPlaceholder: 'EM', flag: '🇪🇺', drawInterval: 86400 },
   { id: 'vl', name: 'Mega 6/45', region: 'region_vn', jackpot: '150B', currencySymbol: '₫', color: 'red', logoPlaceholder: 'VL', flag: '🇻🇳', drawInterval: 86400 },
-  { id: 'kp', name: 'Keno Pro', region: 'Daily', jackpot: '2M', currencySymbol: '$', color: 'gold', logoPlaceholder: 'KP', flag: '🔢', specialDisplay: 'keno', tag: '24/7', drawInterval: 240 },
+  { id: 'kp', name: 'Keno Pro', region: 'Daily', jackpot: '2M', currencySymbol: '$', color: 'gold', logoPlaceholder: 'KP', flag: '🔢', specialDisplay: 'keno', tag: '24/7', drawInterval: 300 },
   { id: 'se', name: 'SuperEnalotto', region: 'Italy', jackpot: '209M', currencySymbol: '€', color: 'green', logoPlaceholder: 'SE', flag: '🇮🇹', drawInterval: 86400 },
 ];
 
 // --- Admin Dashboard Components ---
 
-const AdminDashboard = ({ onBack, drawStates }: { onBack: () => void, drawStates: Record<string, LotteryDrawState> }) => {
+const AdminDashboard = ({ onBack, drawStates, onSettleMissing }: { onBack: () => void, drawStates: Record<string, LotteryDrawState>, onSettleMissing?: () => Promise<void> }) => {
   const { t } = useContext(LanguageContext);
   const [activeTab, setActiveTab] = useState<'draws' | 'prizes' | 'transactions' | 'bets' | 'users' | 'settings'>('draws');
 
@@ -1109,7 +1125,7 @@ const AdminDashboard = ({ onBack, drawStates }: { onBack: () => void, drawStates
 
         {/* Content Area */}
         <div className="flex-1 bg-white rounded-[2.5rem] border border-border-grey shadow-2xl p-8 min-h-[700px] w-full">
-          {activeTab === 'draws' && <AdminDraws drawStates={drawStates} />}
+          {activeTab === 'draws' && <AdminDraws drawStates={drawStates} onSettleMissing={onSettleMissing} />}
           {activeTab === 'prizes' && <AdminPrizes />}
           {activeTab === 'transactions' && <AdminTransactions />}
           {activeTab === 'bets' && <AdminBets />}
@@ -1121,8 +1137,15 @@ const AdminDashboard = ({ onBack, drawStates }: { onBack: () => void, drawStates
   );
 };
 
-const AdminDraws = ({ drawStates }: { drawStates: Record<string, LotteryDrawState> }) => {
+const AdminDraws = ({ drawStates, onSettleMissing }: { drawStates: Record<string, LotteryDrawState>, onSettleMissing?: () => Promise<void> }) => {
   const [configs, setConfigs] = useState<any[]>([]);
+  const [now, setNow] = useState(Date.now());
+  const [isSettling, setIsSettling] = useState(false);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'lottery_configs'), (snap) => {
@@ -1146,7 +1169,20 @@ const AdminDraws = ({ drawStates }: { drawStates: Record<string, LotteryDrawStat
     scheduledResults[targetDrawId] = nums;
     
     await setDoc(configRef, { scheduled_results: scheduledResults }, { merge: true });
-    alert(`期号 ${targetDrawId} 的开奖结果已预设`);
+    alert(`Draw #${targetDrawId} result preset`);
+  };
+
+  const handleManualDraw = async (lotteryId: string) => {
+    const drwRef = doc(db, 'draw_states', lotteryId);
+    await updateDoc(drwRef, { nextDraw: Date.now() - 1000 });
+    alert('已强制开奖，系统正在处理...');
+  };
+
+  const handleSetInterval = async (lotteryId: string, seconds: number) => {
+    if (isNaN(seconds) || seconds <= 0) return;
+    const configRef = doc(db, 'lottery_configs', lotteryId);
+    await setDoc(configRef, { drawInterval: seconds }, { merge: true });
+    alert('开奖间隔阶段性更新，下期开奖后生效');
   };
 
   const handleClearResult = async (lotteryId: string, drawId: string) => {
@@ -1160,59 +1196,140 @@ const AdminDraws = ({ drawStates }: { drawStates: Record<string, LotteryDrawStat
     }
   };
 
+  const handleManualSettle = async () => {
+    setIsSettling(true);
+    try {
+      if (onSettleMissing) {
+        await onSettleMissing();
+      }
+      alert("Background settlement triggered for all pending bets.");
+    } catch (e) {
+      alert("Error: " + e);
+    } finally {
+      setIsSettling(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <h3 className="text-xl font-black text-text-main">开奖管理</h3>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div>
+            <h3 className="text-xl font-black text-text-main">开奖管理</h3>
+            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Manual Draw Control & Scheduling</p>
+          </div>
+          <button 
+            onClick={handleManualSettle}
+            disabled={isSettling}
+            className="px-4 py-2 bg-brand-blue text-white rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg shadow-brand-blue/20 active:scale-95 disabled:opacity-50"
+          >
+            {isSettling ? 'Settling...' : 'Sync & Settle All'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] font-black text-brand-blue bg-brand-blue/5 border border-brand-blue/10 px-4 py-1.5 rounded-full">
+           <Zap size={12} className="animate-pulse" />
+           SYSTEM LIVE
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {lotteries.map(loto => {
           const config = configs.find(c => c.id === loto.id);
           const currentDraw = drawStates[loto.id];
           return (
             <div key={loto.id} className="p-6 border border-border-grey rounded-3xl bg-surface-grey/30 relative overflow-hidden group">
-               <div className="flex items-center justify-between mb-4">
+               <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
-                     <LotteryLogo id={loto.id} />
-                     <span className="font-bold text-text-main">{loto.name}</span>
+                     <div className={`w-12 h-12 rounded-2xl bg-white border border-border-grey flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform`}>
+                        <LotteryLogo id={loto.id} />
+                     </div>
+                     <div>
+                        <span className="font-black text-sm text-text-main block">{loto.name}</span>
+                        <span className="text-[8px] font-bold text-text-muted uppercase tracking-widest">{loto.region}</span>
+                     </div>
                   </div>
-                  <div className="bg-brand-blue/5 border border-brand-blue/10 px-3 py-1 rounded-full">
-                     <p className="text-[9px] font-black text-brand-blue uppercase leading-none mb-0.5">下期期数</p>
-                     <p className="text-[11px] font-mono font-bold text-brand-blue leading-none">{currentDraw?.drawId || '---'}</p>
+                  <div className="flex flex-col items-end">
+                     <span className="text-[10px] font-black text-brand-blue bg-brand-blue/5 px-3 py-1 rounded-full border border-brand-blue/10 mb-1">
+                        #{currentDraw?.drawId || '---'}
+                     </span>
+                     <p className="text-[9px] font-bold text-text-muted italic">
+                       距离下期: {currentDraw?.nextDraw ? Math.max(0, Math.floor((currentDraw.nextDraw - now) / 1000)) : '0'}s
+                     </p>
                   </div>
                </div>
-                <div className="space-y-3">
-                   <div className="flex items-center justify-between">
-                     <label className="text-[10px] font-black text-text-muted uppercase">开奖预设</label>
-                     {config?.scheduled_results?.[currentDraw?.drawId] && (
-                       <span className="text-[8px] font-black text-white bg-danger px-2 py-0.5 rounded-full animate-pulse">
-                         已预设: {config.scheduled_results[currentDraw.drawId].join(', ')}
-                       </span>
-                     )}
+
+                <div className="space-y-5">
+                   {/* Scheduled Result */}
+                   <div className="space-y-2">
+                       <div className="flex items-center justify-between">
+                         <label className="text-[9px] font-black text-text-muted uppercase tracking-widest">下期开奖预设</label>
+                         {currentDraw?.drawId && config?.scheduled_results?.[currentDraw.drawId] && (
+                           <span className="text-[8px] font-black text-white bg-danger px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                             <Target size={8} />
+                             已预设: {Array.isArray(config.scheduled_results[currentDraw.drawId]) ? config.scheduled_results[currentDraw.drawId].join(', ') : 'Format Error'}
+                           </span>
+                         )}
+                       </div>
+                       <div className="flex gap-2">
+                          <input 
+                            id={`draw-${loto.id}`}
+                            type="text" 
+                            placeholder={loto.id === 'f3' ? "例如: 1, 2, 3" : loto.id === 'pb' ? "例如: 1,2,3,4,5,6" : "数字, 逗号隔开"}
+                            className="flex-1 bg-white border border-border-grey rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-brand-blue/20 outline-none"
+                          />
+                          <div className="flex gap-1">
+                            <button 
+                              onClick={() => {
+                                const val = (document.getElementById(`draw-${loto.id}`) as HTMLInputElement).value;
+                                handleSetResult(loto.id, val, currentDraw?.drawId);
+                              }}
+                              className="bg-brand-blue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap shadow-md shadow-brand-blue/10 active:scale-95 transition-transform"
+                            >
+                              保存预设
+                            </button>
+                            {currentDraw?.drawId && config?.scheduled_results?.[currentDraw.drawId] && (
+                              <button 
+                                onClick={() => handleClearResult(loto.id, currentDraw.drawId)}
+                                className="bg-danger/10 text-danger border border-danger/20 px-3 py-2 rounded-xl hover:bg-danger hover:text-white transition-colors"
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                       </div>
                    </div>
-                   <div className="flex gap-2">
-                      <input 
-                        id={`draw-${loto.id}`}
-                        type="text" 
-                        placeholder={loto.id === 'f3' ? "例如: 1, 2, 3" : "例如: 5"}
-                        className="flex-1 bg-white border border-border-grey rounded-xl px-4 py-2 text-sm"
-                      />
-                      <div className="flex gap-1">
-                        <button 
-                          onClick={() => handleSetResult(loto.id, (document.getElementById(`draw-${loto.id}`) as HTMLInputElement).value, currentDraw?.drawId)}
-                          className="bg-brand-blue text-white px-4 py-2 rounded-xl text-xs font-bold"
-                        >
-                          设定下期
-                        </button>
-                        {config?.scheduled_results?.[currentDraw?.drawId] && (
-                          <button 
-                            onClick={() => handleClearResult(loto.id, currentDraw.drawId)}
-                            className="bg-danger/10 text-danger border border-danger/20 px-2 py-2 rounded-xl"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
+
+                   {/* Interval & Manual Control */}
+                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border-grey/30">
+                      <div className="space-y-1.5">
+                         <label className="text-[9px] font-black text-text-muted uppercase tracking-widest">开奖间隔 (秒)</label>
+                         <div className="flex gap-1">
+                            <input 
+                              id={`interval-${loto.id}`}
+                              type="number" 
+                              defaultValue={config?.drawInterval || loto.drawInterval}
+                              className="w-full bg-white border border-border-grey rounded-xl px-3 py-2 text-xs font-bold"
+                            />
+                            <button 
+                              onClick={() => {
+                                const val = parseInt((document.getElementById(`interval-${loto.id}`) as HTMLInputElement).value);
+                                handleSetInterval(loto.id, val);
+                              }}
+                              className="bg-surface-grey border border-border-grey text-text-main p-2 rounded-xl hover:bg-white transition-colors"
+                            >
+                               <Settings2 size={14} />
+                            </button>
+                         </div>
+                      </div>
+                      <div className="flex flex-col justify-end">
+                         <button 
+                           onClick={() => handleManualDraw(loto.id)}
+                           className="w-full h-9 bg-success/10 text-success border border-success/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-success hover:text-white transition-all whitespace-nowrap"
+                         >
+                           立即强制开奖
+                         </button>
                       </div>
                    </div>
-                   <p className="text-[9px] text-text-muted italic">针对期号 {currentDraw?.drawId} 进行手动控制</p>
                 </div>
             </div>
           );
@@ -1372,6 +1489,7 @@ const AdminTransactions = () => {
               <th className="py-4 text-[10px] font-black uppercase text-text-muted">用户 UID</th>
               <th className="py-4 text-[10px] font-black uppercase text-text-muted">类型</th>
               <th className="py-4 text-[10px] font-black uppercase text-text-muted">金额</th>
+              <th className="py-4 text-[10px] font-black uppercase text-text-muted">提现地址</th>
               <th className="py-4 text-[10px] font-black uppercase text-text-muted">状态</th>
               <th className="py-4 text-[10px] font-black uppercase text-text-muted">操作</th>
             </tr>
@@ -1379,13 +1497,31 @@ const AdminTransactions = () => {
           <tbody className="divide-y divide-border-grey/50">
             {txs.filter(t => t.type === 'deposit' || t.type === 'withdrawal').map(tx => (
               <tr key={tx.id} className="hover:bg-surface-grey/30">
-                <td className="py-4 text-[11px] font-mono">{tx.uid.substring(0, 10)}...</td>
+                <td className="py-4 text-[11px] font-mono">{tx.uid?.toString().substring(0, 10) || 'Unknown'}...</td>
                 <td className="py-4">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tx.type === 'deposit' ? 'bg-success/10 text-success' : 'bg-brand-blue/10 text-brand-blue'}`}>
                     {tx.type === 'deposit' ? '充值' : '提现'}
                   </span>
                 </td>
                 <td className="py-4 text-xs font-bold">{tx.amount} USDT</td>
+                <td className="py-4">
+                  <div className="flex flex-col gap-1 max-w-[150px]">
+                    <p className="text-[9px] font-mono break-all opacity-60 leading-tight">{tx.address || '---'}</p>
+                    {tx.status === 'pending' && tx.type === 'withdrawal' && (
+                      <button 
+                        onClick={async () => {
+                          const newAddr = prompt('输入新的提现地址:', tx.address || '');
+                          if (newAddr !== null) {
+                            await updateDoc(doc(db, 'transactions', tx.id), { address: newAddr });
+                          }
+                        }}
+                        className="text-[8px] font-black text-brand-blue uppercase underline tracking-tighter text-left"
+                      >
+                        修改地址
+                      </button>
+                    )}
+                  </div>
+                </td>
                 <td className="py-4">
                   <span className={`text-[10px] font-bold ${
                     tx.status === 'pending' ? 'text-amber-500' : 
@@ -1411,6 +1547,7 @@ const AdminTransactions = () => {
 };
 
 const AdminBets = () => {
+  const { t } = useContext(LanguageContext);
   const [bets, setBets] = useState<any[]>([]);
 
   useEffect(() => {
@@ -1432,14 +1569,35 @@ const AdminBets = () => {
                    <Ticket size={20} />
                 </div>
                 <div>
-                   <p className="text-xs font-black text-text-main">{bet.lotteryId} - #{String(bet.drawId || '').slice(-3) || 'LIVE'}</p>
+                   <p className="text-xs font-black text-text-main">{bet.lotteryId} | DRAW # {bet.drawId || 'LIVE'}</p>
                    <p className="text-[10px] text-text-muted font-mono">{bet.uid}</p>
                 </div>
              </div>
              <div className="flex-1 flex flex-wrap gap-2 justify-center">
-                {bet.numbers.map((n: any, i: number) => (
+                {Array.isArray(bet.numbers) ? bet.numbers.map((n: any, i: number) => (
                   <span key={i} className="w-6 h-6 rounded-full bg-white border border-border-grey flex items-center justify-center text-[10px] font-black">{n}</span>
-                ))}
+                )) : (bet.bets || bet.lines) ? (
+                  <div className="flex flex-wrap gap-1">
+                    {(bet.bets || bet.lines).map((b: any, i: number) => {
+                      const val = b.val || b.selection;
+                      const type = b.type;
+                      const main = b.main;
+                      const displayVal = main && main.length > 0 
+                        ? main.join(',') 
+                        : (type === 'sum' ? `SUM:${val}` : t(val?.toString().toLowerCase()) || val);
+                      
+                      return (
+                        <span key={i} className="px-2 py-0.5 bg-brand-blue/5 text-brand-blue border border-brand-blue/10 rounded text-[9px] font-black uppercase tracking-tighter">
+                          {displayVal}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : bet.selection ? (
+                  <span className="px-3 py-1 bg-brand-blue/10 text-brand-blue rounded-lg text-[10px] font-black uppercase tracking-widest">{bet.selection}</span>
+                ) : (
+                  <span className="text-[9px] text-text-muted italic">No digits</span>
+                )}
              </div>
              <div className="text-right">
                 <p className="text-xs font-black text-text-main">{bet.amount} USDT</p>
@@ -1478,9 +1636,19 @@ const AdminUsers = () => {
     e.preventDefault();
     const form = e.target as any;
     const balance = parseFloat(form.balance.value);
+    const displayName = form.displayName.value;
+    const email = form.email.value;
+    const invite_code = form.invite_code.value;
+    const withdraw_address = form.withdraw_address.value;
     const isAdminChecked = form.isAdmin.checked;
 
-    await updateDoc(doc(db, 'users', editingUser.id), { balance });
+    await updateDoc(doc(db, 'users', editingUser.id), { 
+      balance,
+      displayName,
+      email,
+      invite_code,
+      withdraw_address
+    });
     
     if (isAdminChecked) {
       await setDoc(doc(db, 'admins', editingUser.id), { role: 'admin' });
@@ -1525,14 +1693,16 @@ const AdminUsers = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-grey/50">
-              {users.sort((a, b) => {
-                 const aIsAdmin = admins.includes(a.id);
-                 const bIsAdmin = admins.includes(b.id);
+              {(users || []).sort((a, b) => {
+                 if (!a || !b) return 0;
+                 const aIsAdmin = (admins || []).includes(a.id);
+                 const bIsAdmin = (admins || []).includes(b.id);
                  if (aIsAdmin && !bIsAdmin) return -1;
                  if (!aIsAdmin && bIsAdmin) return 1;
                  return 0;
               }).map(user => {
-                const userIsAdmin = admins.includes(user.id);
+                if (!user) return null;
+                const userIsAdmin = (admins || []).includes(user.id);
                 return (
                   <tr key={user.id} className={`hover:bg-surface-grey/30 transition-colors ${userIsAdmin ? 'bg-amber-50/10' : ''}`}>
                     <td className="px-6 py-4">
@@ -1547,7 +1717,7 @@ const AdminUsers = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="text-xs font-black text-brand-blue">{user.balance?.toFixed(2) || '0.00'}</span>
+                      <span className="text-xs font-black text-brand-blue">{(typeof user.balance === 'number' ? user.balance : parseFloat(user.balance) || 0).toFixed(2)}</span>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-[10px] font-mono font-bold text-text-main select-all">{user.invite_code || '---'}</span>
@@ -1591,7 +1761,27 @@ const AdminUsers = () => {
                  </div>
               </div>
 
-              <form onSubmit={handleUpdateUser} className="space-y-6">
+              <form onSubmit={handleUpdateUser} className="space-y-6 max-h-[60vh] overflow-y-auto px-1 pr-2">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">用户名</label>
+                    <input 
+                      name="displayName" 
+                      type="text" 
+                      defaultValue={editingUser.displayName || ''} 
+                      className="w-full bg-surface-grey border border-border-grey rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all" 
+                    />
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">邮箱地址</label>
+                    <input 
+                      name="email" 
+                      type="email" 
+                      defaultValue={editingUser.email || ''} 
+                      className="w-full bg-surface-grey border border-border-grey rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all" 
+                    />
+                 </div>
+
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">修改余额 (USDT)</label>
                     <input 
@@ -1600,6 +1790,27 @@ const AdminUsers = () => {
                       step="0.01" 
                       defaultValue={editingUser.balance} 
                       className="w-full bg-surface-grey border border-border-grey rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all" 
+                    />
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">邀请码</label>
+                    <input 
+                      name="invite_code" 
+                      type="text" 
+                      defaultValue={editingUser.invite_code || ''} 
+                      className="w-full bg-surface-grey border border-border-grey rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all" 
+                    />
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">默认提现钱包地址</label>
+                    <input 
+                      name="withdraw_address" 
+                      type="text" 
+                      defaultValue={editingUser.withdraw_address || ''} 
+                      placeholder="TRC20 / ERC20 地址"
+                      className="w-full bg-surface-grey border border-border-grey rounded-2xl px-5 py-3 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all" 
                     />
                  </div>
                  
@@ -1939,13 +2150,19 @@ const Navbar = ({ onLoginClick, isLoggedIn, onProfileClick }: { onLoginClick: ()
 
 const Card = ({ lottery, onSelect }: { lottery: Lottery; onSelect: (loto: Lottery) => void; key?: string }) => {
   const { t } = useContext(LanguageContext);
-  const { drawStates } = useContext(LotteryContext);
+  const { drawStates, lotteryHistory } = useContext(LotteryContext);
   const [timeLeft, setTimeLeft] = useState('');
+
+  const history = lotteryHistory[lottery.id] || [];
+  const recentResults = history.slice(0, 3).map(h => h.res?.[0] ?? 0);
 
   useEffect(() => {
     const updateTimer = () => {
       const state = drawStates[lottery.id];
-      if (!state) return;
+      if (!state || !state.nextDraw) {
+        setTimeLeft('00:00:00');
+        return;
+      }
       
       const now = Date.now();
       const diff = Math.max(0, state.nextDraw - now);
@@ -2005,7 +2222,7 @@ const Card = ({ lottery, onSelect }: { lottery: Lottery; onSelect: (loto: Lotter
           <div className="bg-surface-grey rounded-lg p-1.5 border border-border-grey/30 mb-2">
              <p className="text-[7.5px] font-bold text-danger uppercase tracking-wider mb-1 opacity-80">{t('recent_results')}</p>
              <div className="flex gap-1.5 justify-start items-center">
-                {[2, 4, 3].map((n, i) => (
+                {(recentResults.length > 0 ? recentResults : [1, 2, 3]).map((n, i) => (
                   <div key={i} className="w-4.5 h-4.5 rounded-full bg-danger flex items-center justify-center text-[10px] font-black text-white shadow-sm border-t border-white/20">
                     {n}
                   </div>
@@ -2065,22 +2282,12 @@ const Card = ({ lottery, onSelect }: { lottery: Lottery; onSelect: (loto: Lotter
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between text-[9px] font-semibold text-text-muted border-t border-border-grey/40 pt-2">
-          {lottery.specialDisplay ? (
-             <div className="flex items-center gap-1.5 text-danger bg-danger/5 px-2 py-0.5 rounded-full border border-danger/10">
-               <span className="relative flex h-1.5 w-1.5">
-                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger opacity-75"></span>
-                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-danger"></span>
-               </span>
-               <span className="text-[7px] uppercase tracking-wider font-black">{t('live_every')} {lottery.specialDisplay === 'hash' ? t('next_block') : (lottery.id === 'wg' ? '5m' : '90s')}</span>
-             </div>
-          ) : (
-            <div className="flex items-center gap-1">
-               <Clock size={10} className="text-brand-blue/60" />
-               <span className="font-mono text-text-main tracking-tighter">
-                 {timeLeft}
-               </span>
-            </div>
-          )}
+          <div className="flex items-center gap-1">
+             <Clock size={10} className="text-brand-blue/60" />
+             <span className="font-mono text-text-main tracking-tighter">
+               {timeLeft || '00:00:00'}
+             </span>
+          </div>
           <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gradient-to-br from-brand-blue-light/40 to-transparent border border-brand-blue/10 relative overflow-hidden group/hologram">
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover/hologram:animate-shimmer" />
             <CheckCircle2 size={10} className="text-brand-blue/80" />
@@ -2280,8 +2487,9 @@ const TicketSelection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lot
   const unitPrice = lottery.id === 'wg' ? (parseFloat(customAmount) || 0) : 2;
   const totalPrice = totalLines * unitPrice;
   const isAllComplete = lines.every(line => 
-    line.main.length === rules.mainPicks && 
-    (!rules.hasSpecial || line.powerball !== null)
+    (line.type === 'binary' && line.val) ||
+    (line.main.length === rules.mainPicks && 
+     (!rules.hasSpecial || line.powerball !== null))
   );
 
   return (
@@ -2444,24 +2652,24 @@ const TicketSelection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lot
             {/* Color Quick Select */}
             <div className="grid grid-cols-3 gap-3 mb-4">
               <button 
-                onClick={() => { const nums = [1,3,7,9,5]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="group relative overflow-hidden py-3 rounded-xl bg-green-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-500/20 active:scale-95 transition-all"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'GREEN', main: [], powerball: null })}
+                className={`group relative overflow-hidden py-3 rounded-xl bg-green-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-green-500/20 active:scale-95 transition-all border-4 ${activeLine.type === 'binary' && activeLine.val === 'GREEN' ? 'border-white' : 'border-transparent'}`}
               >
                  <div className="absolute inset-x-0 top-0 h-px bg-white/20" />
                  <span>{t('green')}</span>
                  <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               <button 
-                onClick={() => { const nums = [0,5]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="group relative overflow-hidden py-3 rounded-xl bg-purple-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-500/20 active:scale-95 transition-all"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'PURPLE', main: [], powerball: null })}
+                className={`group relative overflow-hidden py-3 rounded-xl bg-purple-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-purple-500/20 active:scale-95 transition-all border-4 ${activeLine.type === 'binary' && activeLine.val === 'PURPLE' ? 'border-white' : 'border-transparent'}`}
               >
                  <div className="absolute inset-x-0 top-0 h-px bg-white/20" />
                  <span>{t('purple')}</span>
                  <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
               <button 
-                onClick={() => { const nums = [2,4,6,8,0]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="group relative overflow-hidden py-3 rounded-xl bg-red-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-all"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'RED', main: [], powerball: null })}
+                className={`group relative overflow-hidden py-3 rounded-xl bg-red-500 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-all border-4 ${activeLine.type === 'binary' && activeLine.val === 'RED' ? 'border-white' : 'border-transparent'}`}
               >
                  <div className="absolute inset-x-0 top-0 h-px bg-white/20" />
                  <span>{t('red')}</span>
@@ -2472,32 +2680,32 @@ const TicketSelection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lot
             {/* Big / Small / Odd / Even */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <button 
-                onClick={() => { const nums = [5,6,7,8,9]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="py-3 rounded-xl bg-white border border-border-grey text-text-main font-black text-[10px] uppercase tracking-widest hover:border-brand-blue hover:text-brand-blue transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'BIG', main: [], powerball: null })}
+                className={`py-3 rounded-xl border text-text-main font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1 ${activeLine.type === 'binary' && activeLine.val === 'BIG' ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white border-border-grey hover:border-brand-blue'}`}
               >
                 <span>{t('big')}</span>
-                <span className="text-[8px] font-black bg-brand-blue/5 text-brand-blue px-2 py-0.5 rounded">{config?.binaryOdds?.big || 1.96}x</span>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded ${activeLine.type === 'binary' && activeLine.val === 'BIG' ? 'bg-white/20' : 'bg-brand-blue/5 text-brand-blue'}`}>{config?.binaryOdds?.big || 1.96}x</span>
               </button>
               <button 
-                onClick={() => { const nums = [0,1,2,3,4]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="py-3 rounded-xl bg-white border border-border-grey text-text-main font-black text-[10px] uppercase tracking-widest hover:border-brand-blue hover:text-brand-blue transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'SMALL', main: [], powerball: null })}
+                className={`py-3 rounded-xl border text-text-main font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1 ${activeLine.type === 'binary' && activeLine.val === 'SMALL' ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white border-border-grey hover:border-brand-blue'}`}
               >
                 <span>{t('small')}</span>
-                <span className="text-[8px] font-black bg-brand-blue/5 text-brand-blue px-2 py-0.5 rounded">{config?.binaryOdds?.small || 1.96}x</span>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded ${activeLine.type === 'binary' && activeLine.val === 'SMALL' ? 'bg-white/20' : 'bg-brand-blue/5 text-brand-blue'}`}>{config?.binaryOdds?.small || 1.96}x</span>
               </button>
               <button 
-                onClick={() => { const nums = [1,3,5,7,9]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="py-3 rounded-xl bg-white border border-border-grey text-text-main font-black text-[10px] uppercase tracking-widest hover:border-brand-blue hover:text-brand-blue transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'ODD', main: [], powerball: null })}
+                className={`py-3 rounded-xl border text-text-main font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1 ${activeLine.type === 'binary' && activeLine.val === 'ODD' ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white border-border-grey hover:border-brand-blue'}`}
               >
                 <span>{t('odd')}</span>
-                <span className="text-[8px] font-black bg-brand-blue/5 text-brand-blue px-2 py-0.5 rounded">{config?.binaryOdds?.odd || 1.96}x</span>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded ${activeLine.type === 'binary' && activeLine.val === 'ODD' ? 'bg-white/20' : 'bg-brand-blue/5 text-brand-blue'}`}>{config?.binaryOdds?.odd || 1.96}x</span>
               </button>
               <button 
-                onClick={() => { const nums = [0,2,4,6,8]; toggleMain(nums[Math.floor(Math.random()*nums.length)]); }}
-                className="py-3 rounded-xl bg-white border border-border-grey text-text-main font-black text-[10px] uppercase tracking-widest hover:border-brand-blue hover:text-brand-blue transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1"
+                onClick={() => updateActiveLine({ type: 'binary', val: 'EVEN', main: [], powerball: null })}
+                className={`py-3 rounded-xl border text-text-main font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-sm flex flex-col items-center gap-1 ${activeLine.type === 'binary' && activeLine.val === 'EVEN' ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white border-border-grey hover:border-brand-blue'}`}
               >
                 <span>{t('even')}</span>
-                <span className="text-[8px] font-black bg-brand-blue/5 text-brand-blue px-2 py-0.5 rounded">{config?.binaryOdds?.even || 1.96}x</span>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded ${activeLine.type === 'binary' && activeLine.val === 'EVEN' ? 'bg-white/20' : 'bg-brand-blue/5 text-brand-blue'}`}>{config?.binaryOdds?.even || 1.96}x</span>
               </button>
             </div>
           </div>
@@ -3018,12 +3226,64 @@ const ResultsView = ({ lotteries, onShowDetail }: { lotteries: Lottery[], onShow
 
 const WalletView = ({ currentUser }: { currentUser: any }) => {
   const { t } = useContext(LanguageContext);
-  const address = "TAbc123xyz789QWERTYUIOPasdfghjkl1234";
   const networks = ["USDT (TRC20)", "USDT (ERC20)", "USDC"];
   const [selectedNetwork, setSelectedNetwork] = useState(0);
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [amount, setAmount] = useState('');
-  
+  const [withdrawAddress, setWithdrawAddress] = useState(currentUser?.withdraw_address || '');
+  const [loading, setLoading] = useState(false);
+
+  const handleWithdrawal = async () => {
+    const val = parseFloat(amount);
+    if (!val || val < 10) return alert('Minimum withdrawal is 10 USDT');
+    if (val > (currentUser?.balance || 0)) return alert('Insufficient balance');
+    if (!withdrawAddress) return alert('Please enter withdrawal address');
+
+    setLoading(true);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const txRef = doc(collection(db, 'transactions'));
+        
+        const userSnap = await transaction.get(userRef);
+        const balance = userSnap.data()?.balance || 0;
+        
+        if (balance < val) throw new Error('Insufficient balance');
+        
+        transaction.update(userRef, { 
+          balance: balance - val,
+          withdraw_address: withdrawAddress // Save the address to profile
+        });
+
+        transaction.set(txRef, {
+          uid: currentUser.uid,
+          amount: val,
+          type: 'withdrawal',
+          status: 'pending',
+          address: withdrawAddress,
+          network: networks[selectedNetwork],
+          timestamp: serverTimestamp()
+        });
+      });
+      alert('Withdrawal request submitted');
+      setAmount('');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [settings, setSettings] = useState<any>(null);
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
+      if (doc.exists()) setSettings(doc.data());
+    });
+    return () => unsub();
+  }, []);
+
+  const depositAddress = selectedNetwork === 0 ? settings?.trc20_address : settings?.erc20_address;
+
   return (
     <div className="max-w-xl mx-auto pb-20 px-4">
       <div className="flex items-center justify-center gap-2 mb-4">
@@ -3140,8 +3400,16 @@ const WalletView = ({ currentUser }: { currentUser: any }) => {
                <div className="text-center">
                   <p className="text-[9px] font-black text-text-muted uppercase tracking-[0.2em] mb-2">{networks[selectedNetwork]} Receiver Address</p>
                   <div className="flex items-center gap-2 p-3 bg-surface-grey rounded-xl border border-border-grey/50 group">
-                     <span className="flex-1 text-[11px] font-mono font-black text-text-main truncate">{address}</span>
-                     <button className="p-2 bg-brand-blue text-white rounded-lg shadow-md active:scale-95 transition-all hover:bg-brand-blue/90">
+                     <span className="flex-1 text-[11px] font-mono font-black text-text-main truncate">{depositAddress || '---'}</span>
+                     <button 
+                       onClick={() => {
+                         if (depositAddress) {
+                           navigator.clipboard.writeText(depositAddress);
+                           alert('Address copied');
+                         }
+                       }}
+                       className="p-2 bg-brand-blue text-white rounded-lg shadow-md active:scale-95 transition-all hover:bg-brand-blue/90"
+                     >
                         <Copy size={16} />
                      </button>
                   </div>
@@ -3154,12 +3422,18 @@ const WalletView = ({ currentUser }: { currentUser: any }) => {
               <label className="text-[9px] font-black text-text-muted uppercase tracking-widest ml-1 mb-1.5 block">Withdrawal Address</label>
               <input 
                 type="text"
+                value={withdrawAddress}
+                onChange={(e) => setWithdrawAddress(e.target.value)}
                 placeholder="Paste your wallet address..."
                 className="w-full bg-surface-grey border border-border-grey/50 rounded-xl py-3 px-4 text-xs font-bold text-text-main placeholder:text-text-muted/40 outline-none focus:border-brand-blue transition-all"
               />
             </div>
-            <button className="w-full py-4 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-brand-blue/20 active:scale-[0.98] transition-all">
-              Confirm Withdrawal
+            <button 
+              onClick={handleWithdrawal}
+              disabled={loading}
+              className="w-full py-4 bg-brand-blue text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-brand-blue/20 active:scale-[0.98] disabled:opacity-50 transition-all"
+            >
+              {loading ? 'Processing...' : 'Confirm Withdrawal'}
             </button>
           </div>
         )}
@@ -3215,14 +3489,76 @@ const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUs
     }
   }, [currentUser]);
 
+  // Hook to check for settlement
+  const { settleBets } = useContext(LotteryContext);
+  useEffect(() => {
+    if (!currentUser || bets.length === 0 || !settleBets) return;
+    
+    const checkNeeded = bets.filter(b => b.status === 'pending');
+    if (checkNeeded.length === 0) return;
+
+    const autoSettle = async () => {
+      for (const bet of checkNeeded) {
+        const histId = `${bet.lotteryId}_${bet.drawId}`;
+        const histSnap = await getDoc(doc(db, 'draw_history', histId));
+        if (histSnap.exists()) {
+          settleBets(bet.lotteryId, bet.drawId, histSnap.data().res);
+        }
+      }
+    };
+    autoSettle();
+  }, [bets, currentUser, settleBets]);
+
+  const stats = useMemo(() => {
+    return bets.reduce((acc, bet) => {
+      const amt = parseFloat(bet.amount || '0');
+      const win = parseFloat(bet.winAmount || '0');
+      acc.totalInvested += amt;
+      acc.totalWon += win;
+      if (bet.status === 'won') acc.winCount++;
+      return acc;
+    }, { totalInvested: 0, totalWon: 0, winCount: 0 });
+  }, [bets]);
+
+  const netProfit = stats.totalWon - stats.totalInvested;
+
   return (
-    <div className="max-w-xl mx-auto pb-32 px-4">
-      <div className="flex items-center gap-4 mb-8">
-        <button onClick={onBack} className="p-2 bg-white border border-border-grey rounded-xl shadow-sm">
-           <ChevronLeft size={20} className="text-text-main" />
-        </button>
-        <h2 className="text-xl font-black text-text-main uppercase tracking-tight">{t('my_bets')}</h2>
+    <div className="max-w-md mx-auto pb-32 px-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="p-2 bg-white border border-border-grey rounded-lg shadow-sm active:scale-95 transition-all">
+             <ChevronLeft size={16} className="text-text-main" />
+          </button>
+          <div>
+            <h2 className="text-base font-black text-text-main uppercase tracking-tight leading-tight">{t('my_bets')}</h2>
+            <p className="text-[8px] font-bold text-text-muted uppercase tracking-widest">{bets.length} TICKETS</p>
+          </div>
+        </div>
       </div>
+
+      {/* Stats Dashboard - Compact */}
+      {!loading && bets.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid grid-cols-3 gap-2 mb-6"
+        >
+          <div className="bg-white border border-border-grey rounded-xl p-2 shadow-sm text-center">
+            <p className="text-[7px] font-black text-text-muted uppercase tracking-tight mb-0.5">Invested</p>
+            <p className="text-xs font-black text-text-main tabular-nums">{stats.totalInvested.toFixed(1)}</p>
+          </div>
+          <div className="bg-white border border-border-grey rounded-xl p-2 shadow-sm border-b-2 border-b-success/30 text-center">
+            <p className="text-[7px] font-black text-text-muted uppercase tracking-tight mb-0.5">Returns</p>
+            <p className="text-xs font-black text-success tabular-nums">{stats.totalWon.toFixed(1)}</p>
+          </div>
+          <div className="bg-brand-blue text-white rounded-xl p-2 shadow-md text-center">
+            <p className="text-[7px] font-black text-white/60 uppercase tracking-tight mb-0.5">Profit</p>
+            <p className={`text-xs font-black tabular-nums ${netProfit >= 0 ? 'text-white' : 'text-danger'}`}>
+              {netProfit >= 0 ? '+' : ''}{netProfit.toFixed(1)}
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center py-20 opacity-20">
@@ -3230,84 +3566,106 @@ const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUs
         </div>
       ) : error ? (
         <div className="text-center py-20 bg-danger/5 rounded-3xl border border-dashed border-danger/20 p-6">
-          <p className="text-sm font-bold text-danger mb-2">Error</p>
+          <AlertCircle size={32} className="text-danger mx-auto mb-4" />
+          <p className="text-sm font-bold text-danger mb-2">Sync Error</p>
           <p className="text-[10px] text-danger/60 break-words">{error}</p>
         </div>
       ) : bets.length === 0 ? (
-        <div className="text-center py-20 bg-surface-grey rounded-3xl border border-dashed border-border-grey">
-          <p className="text-sm font-bold text-text-muted">暂无投资记录</p>
+        <div className="text-center py-32 bg-surface-grey rounded-3xl border border-dashed border-border-grey flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-white border border-border-grey flex items-center justify-center text-text-muted/20">
+            <Ticket size={32} />
+          </div>
+          <p className="text-sm font-bold text-text-muted uppercase tracking-widest">No active bets yet</p>
+          <button onClick={onBack} className="px-6 py-2 bg-brand-blue text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Go to Lobby</button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {bets.map((bet) => (
-            <div key={bet.id} className="bg-white border border-border-grey rounded-2xl p-4 shadow-sm relative overflow-hidden text-left">
+        <div className="space-y-3">
+          {bets.map((bet, idx) => (
+            <motion.div 
+              key={bet.id} 
+              initial={{ opacity: 0, x: -15 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.03 }}
+              className="bg-white border border-border-grey rounded-2xl p-4 shadow-sm relative overflow-hidden text-left hover:shadow-md transition-all group border-l-[3px] border-l-transparent"
+              style={{ borderLeftColor: bet.status === 'won' ? '#22C55E' : bet.status === 'lost' ? '#6C757D' : '#0066FF' }}
+            >
               {bet.status === 'won' && (
-                <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none">
-                  <div className="absolute top-2 -right-6 w-24 py-1 bg-success text-white text-[8px] font-black uppercase text-center rotate-45 shadow-lg">
-                    Winning
+                <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none overflow-hidden z-20">
+                  <div className="absolute top-2 -right-7 w-28 py-0.5 bg-success text-white text-[8px] font-black uppercase text-center rotate-45 shadow-sm flex flex-col items-center">
+                    <span className="leading-none tracking-[0.1em]">WIN</span>
                   </div>
                 </div>
               )}
               
               <div className="flex justify-between items-start mb-3">
-                <div>
-                  <p className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-0.5">{bet.lotteryName || bet.lotteryId}</p>
-                  <p className="text-[9px] font-medium text-text-muted/60">
-                    {bet.timestamp?.toDate ? bet.timestamp.toDate().toLocaleString() : 'Just now'}
-                  </p>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded bg-surface-grey border border-border-grey flex items-center justify-center">
+                      <Ticket size={12} className="text-brand-blue" />
+                    </div>
+                    <p className="text-[10px] font-black text-text-main uppercase tracking-tight">{bet.lotteryName || bet.lotteryId}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] font-black text-brand-blue bg-brand-blue/5 px-1.5 py-0.5 rounded-md uppercase tracking-widest ring-1 ring-brand-blue/10"># {bet.drawId}</span>
+                    <p className="text-[8px] font-medium text-text-muted/60 tabular-nums">
+                      {bet.timestamp?.toDate ? bet.timestamp.toDate().toLocaleString() : 'Just now'}
+                    </p>
+                  </div>
                 </div>
-                <div className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${
-                  bet.status === 'won' ? 'bg-success/10 text-success' : 
-                  bet.status === 'lost' ? 'bg-text-muted/10 text-text-muted' : 
-                  'bg-brand-blue/10 text-brand-blue'
+                <div className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest shadow-sm ${
+                   bet.status === 'won' ? 'bg-success text-white' : 
+                   bet.status === 'lost' ? 'bg-text-muted/10 text-text-muted' : 
+                   'bg-brand-blue/10 text-brand-blue'
                 }`}>
-                  {bet.status === 'won' ? t('status_won') : bet.status === 'lost' ? t('status_lost') : t('status_pending')}
+                   {bet.status === 'won' ? t('status_won') : bet.status === 'lost' ? t('status_lost') : t('status_pending')}
                 </div>
               </div>
 
-              <div className="mb-4 bg-surface-grey rounded-xl p-3">
+              <div className="mb-4 bg-surface-grey/50 rounded-xl p-3 border border-border-grey/20">
                 {bet.lines ? (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {bet.lines.map((line: any, lIdx: number) => (
                       <div key={`bet-${bet.id}-line-${lIdx}`} className="flex gap-1 flex-wrap">
                         {line.main?.map((n: number, nIdx: number) => (
-                          <span key={`bet-${bet.id}-line-${lIdx}-n-${nIdx}`} className="w-5 h-5 rounded-full bg-white border border-border-grey flex items-center justify-center text-[9px] font-black shadow-sm">{n}</span>
+                          <span key={`bet-${bet.id}-line-${lIdx}-n-${nIdx}`} className="w-5 h-5 rounded-full bg-white border border-border-grey flex items-center justify-center text-[8px] font-black shadow-sm text-text-main">{n < 10 ? `0${n}` : n}</span>
                         )) || null}
                         {line.powerball && (
-                          <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[9px] font-black shadow-sm">{line.powerball}</span>
+                          <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[8px] font-black shadow-sm">{line.powerball < 10 ? `0${line.powerball}` : line.powerball}</span>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : bet.bets ? (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {bet.bets.map((b: any, bIdx: number) => (
-                      <span key={`bet-${bet.id}-b-${bIdx}`} className="px-2 py-1 bg-white border border-border-grey rounded text-[10px] font-black text-brand-blue shadow-sm">
-                        {b.type === 'sum' ? `和值:${b.val}` : b.val} x{b.multiplier || 1}
+                      <span key={`bet-${bet.id}-b-${bIdx}`} className="px-2 py-1 bg-white border border-border-grey rounded-lg text-[9px] font-black text-brand-blue shadow-sm uppercase tracking-tighter">
+                         <span className="opacity-50 mr-1">{b.type === 'sum' ? 'SUM' : b.type}:</span>
+                         {b.val} <span className="text-[7px] text-text-muted ml-0.5">x{b.multiplier || 1}</span>
                       </span>
                     ))}
                   </div>
                 ) : (
-                   <div className="flex items-center gap-2">
-                      <div className="w-1 h-1 rounded-full bg-text-muted/40" />
-                      <p className="text-[10px] font-bold text-text-main opacity-60">期号: #{bet.drawId}</p>
-                   </div>
+                    <div className="flex items-center gap-2">
+                       <div className="w-1.5 h-1.5 rounded-full bg-brand-blue animate-pulse" />
+                       <p className="text-[8px] font-bold text-text-main uppercase tracking-widest opacity-60">Pending Settlement</p>
+                    </div>
                 )}
               </div>
 
-              <div className="flex justify-between items-end border-t border-border-grey/30 pt-3">
-                <div>
-                  <p className="text-[8px] font-black text-text-muted uppercase tracking-tighter mb-0.5">Investment</p>
-                  <p className="text-sm font-black text-text-main leading-none">{bet.amount} <span className="text-[9px]">USDT</span></p>
+              <div className="flex items-center gap-4 relative pt-1 border-t border-border-grey/10">
+                <div className="flex-1">
+                  <p className="text-[7px] font-black text-text-muted uppercase tracking-widest mb-1 leading-none">Investment</p>
+                  <p className="text-[12px] font-black text-text-main leading-none tabular-nums tracking-tighter">{parseFloat(bet.amount || '0').toFixed(2)} <span className="text-[8px] font-medium opacity-40 ml-0.5">USDT</span></p>
                 </div>
-                <div className="text-right">
-                  <p className="text-[8px] font-black text-text-muted uppercase tracking-tighter mb-0.5">Win Return</p>
-                  <p className={`text-base font-black leading-none ${bet.status === 'won' ? 'text-success' : 'text-text-main'}`}>
-                    {bet.status === 'won' ? `+${bet.payout || bet.prize}` : (bet.payout || '-')} <span className="text-[9px]">USDT</span>
+                
+                <div className="flex-1 text-right">
+                  <p className="text-[7px] font-black text-text-muted uppercase tracking-widest mb-1 leading-none">Win Return</p>
+                  <p className={`text-[12px] font-black leading-none tabular-nums tracking-tighter ${bet.status === 'won' ? 'text-success' : 'text-text-muted/40'}`}>
+                    {bet.status === 'won' ? `+${(Number(bet.winAmount) || 0).toFixed(2)}` : (bet.status === 'lost' ? '0.00' : '-')} <span className="text-[10px] font-medium ml-0.5">USDT</span>
                   </p>
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -3315,14 +3673,20 @@ const BetHistoryView = ({ onBack, currentUser }: { onBack: () => void; currentUs
   );
 };
 
-const TransactionHistoryView = ({ onBack }: { onBack: () => void }) => {
+const TransactionHistoryView = ({ onBack, currentUser }: { onBack: () => void, currentUser: any }) => {
   const { t } = useContext(LanguageContext);
-  const txs = [
-    { id: 'TX559021', type: 'Deposit', amount: '500.00', status: 'Completed', time: '2026-04-22 13:00:00', method: 'USDT-TRC20' },
-    { id: 'TX559018', type: 'Withdrawal', amount: '200.00', status: 'Processing', time: '2026-04-22 11:20:45', method: 'USDT-TRC20' },
-    { id: 'TX558990', type: 'Deposit', amount: '100.00', status: 'Completed', time: '2026-04-21 16:40:12', method: 'USDT-TRC20' },
-    { id: 'TX558882', type: 'Withdrawal', amount: '50.00', status: 'Completed', time: '2026-04-21 09:15:33', method: 'USDT-TRC20' },
-  ];
+  const [txs, setTxs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const q = query(collection(db, 'transactions'), where('uid', '==', currentUser.uid), orderBy('timestamp', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setTxs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [currentUser?.uid]);
 
   return (
     <div className="max-w-xl mx-auto pb-32 px-4 text-left">
@@ -3334,28 +3698,44 @@ const TransactionHistoryView = ({ onBack }: { onBack: () => void }) => {
       </div>
 
       <div className="space-y-4">
-        {txs.map((tx) => (
-          <div key={tx.id} className="flex items-center justify-between p-4 bg-white border border-border-grey rounded-2xl shadow-sm">
-             <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  tx.type === 'Deposit' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
-                }`}>
-                   {tx.type === 'Deposit' ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />}
+        {loading ? (
+          <div className="text-center py-20 opacity-30">
+            <p className="text-xs font-black uppercase tracking-widest">Loading transactions...</p>
+          </div>
+        ) : txs.length === 0 ? (
+          <div className="text-center py-20 bg-surface-grey border border-dashed border-border-grey rounded-3xl">
+            <p className="text-sm font-bold text-text-muted">No transactions yet</p>
+          </div>
+        ) : txs.map((tx) => (
+          <div key={tx.id} className="flex flex-col p-4 bg-white border border-border-grey rounded-2xl shadow-sm gap-3">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                     tx.type === 'deposit' ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+                   }`}>
+                      {tx.type === 'deposit' ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />}
+                   </div>
+                   <div>
+                      <p className="text-sm font-black text-text-main leading-none mb-1 uppercase">{tx.type}</p>
+                      <p className="text-[9px] font-medium text-text-muted uppercase tracking-tight">#{tx.id.substring(0, 10)}</p>
+                   </div>
                 </div>
-                <div>
-                   <p className="text-sm font-black text-text-main leading-tight">{tx.type}</p>
-                   <p className="text-[9px] font-medium text-text-muted mt-1 uppercase tracking-tight">{tx.method} • {tx.id}</p>
+                <div className="text-right">
+                   <p className={`text-sm font-black ${tx.type === 'deposit' ? 'text-success' : 'text-danger'}`}>
+                      {tx.type === 'deposit' ? '+' : '-'}{tx.amount} USDT
+                   </p>
+                   <div className="flex items-center justify-end gap-1 mt-1">
+                      <div className={`w-1 h-1 rounded-full ${tx.status === 'completed' ? 'bg-success' : 'bg-amber-400 animate-pulse'}`} />
+                      <p className="text-[8px] font-bold text-text-muted uppercase tracking-widest">{tx.status}</p>
+                   </div>
                 </div>
              </div>
-             <div className="text-right">
-                <p className={`text-sm font-black ${tx.type === 'Deposit' ? 'text-success' : 'text-danger'}`}>
-                   {tx.type === 'Deposit' ? '+' : '-'}{tx.amount}
-                </p>
-                <div className="flex items-center justify-end gap-1 mt-1">
-                   <div className={`w-1 h-1 rounded-full ${tx.status === 'Completed' ? 'bg-success' : 'bg-amber-400 animate-pulse'}`} />
-                   <p className="text-[8px] font-bold text-text-muted uppercase tracking-widest">{tx.status}</p>
-                </div>
-             </div>
+             {(tx.type === 'withdrawal' || tx.address) && (
+               <div className="bg-surface-grey/50 p-2 rounded-lg border border-border-grey/30">
+                  <p className="text-[8px] font-black text-text-muted uppercase tracking-widest mb-1">Destination Address</p>
+                  <p className="text-[10px] font-mono text-text-main break-all">{tx.address || '---'}</p>
+               </div>
+             )}
           </div>
         ))}
       </div>
@@ -3521,10 +3901,19 @@ const LoginView = ({ onLogin, onGoToRegister }: { onLogin: (user: any) => void; 
     if (!email || !password) return;
     setIsLoading(true);
     setError('');
+    
+    // Safety timeout to prevent infinite "PROCESSING" state
+    const timeoutId = setTimeout(() => {
+      setIsLoading(false);
+      setError('Connection timeout. Please try again.');
+    }, 15000);
+
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      clearTimeout(timeoutId);
       onLogin(userCredential.user);
     } catch (err: any) {
+      clearTimeout(timeoutId);
       console.error(err);
       setError('Invalid email or password');
     } finally {
@@ -3623,11 +4012,16 @@ const RegisterView = ({ onRegister, onGoToLogin }: { onRegister: (userData: any)
     setIsLoading(true);
     setError('');
 
+    const timeoutId = setTimeout(() => {
+      setIsLoading(false);
+      setError('Connection timeout. Please try again.');
+    }, 15000);
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      clearTimeout(timeoutId);
       const user = userCredential.user;
       const inviteCode = generateInviteCode();
-
       const userData = {
         uid: user.uid,
         email: user.email,
@@ -3643,6 +4037,7 @@ const RegisterView = ({ onRegister, onGoToLogin }: { onRegister: (userData: any)
       
       onRegister(userData);
     } catch (err: any) {
+      clearTimeout(timeoutId);
       console.error(err);
       setError(err.message || 'Registration failed');
     } finally {
@@ -4231,7 +4626,8 @@ const AppContent = ({
   setIsLoggedIn,
   isAdmin,
   currentUser,
-  drawStates
+  drawStates,
+  onSettleMissing
 }: {
   view: ViewType;
   setView: (v: ViewType) => void;
@@ -4249,6 +4645,7 @@ const AppContent = ({
   isAdmin: boolean;
   currentUser: any;
   drawStates: Record<string, LotteryDrawState>;
+  onSettleMissing?: () => Promise<void>;
 }) => {
   const { t } = useContext(LanguageContext);
 
@@ -4385,7 +4782,18 @@ const AppContent = ({
       }
       return <TicketSelection lottery={selectedLoto!} onBack={() => setView('lobby')} onWin={() => setShowWinPopup(true)} currentUser={currentUser} />;
     } else if (view === 'admin') {
-      return <AdminDashboard onBack={() => setView('lobby')} drawStates={drawStates} />;
+      return (
+        <React.Suspense fallback={<div className="p-20 text-center">Loading Dashboard...</div>}>
+          <AdminDashboard 
+            onBack={() => {
+              setView('lobby');
+              window.scrollTo({ top: 0 });
+            }} 
+            drawStates={drawStates || {}} 
+            onSettleMissing={onSettleMissing}
+          />
+        </React.Suspense>
+      );
     } else if (view === 'profile') {
       return <Profile setView={setView} setIsLoggedIn={setIsLoggedIn} currentUser={currentUser} isAdmin={isAdmin} />;
     } else if (view === 'results') {
@@ -4400,9 +4808,13 @@ const AppContent = ({
         />
       );
     } else if (view === 'results_detail') {
+      if (!selectedLotoForHistory) {
+        setView('results');
+        return null;
+      }
       return (
         <ResultsDetailView 
-          lottery={selectedLotoForHistory!} 
+          lottery={selectedLotoForHistory} 
           onBack={() => setView('results')} 
         />
       );
@@ -4413,7 +4825,7 @@ const AppContent = ({
     } else if (view === 'bet_history') {
       return <BetHistoryView onBack={() => setView('profile')} currentUser={currentUser} />;
     } else if (view === 'transaction_history') {
-      return <TransactionHistoryView onBack={() => setView('profile')} />;
+      return <TransactionHistoryView onBack={() => setView('profile')} currentUser={currentUser} />;
     } else if (view === 'notifications') {
       return <NotificationsView onBack={() => setView('profile')} />;
     } else if (view === 'security') {
@@ -4425,15 +4837,50 @@ const AppContent = ({
   };
 
   return (
+    <MainLayout
+      view={view}
+      setView={setView}
+      isLoggedIn={isLoggedIn}
+      onLoginClick={() => setView('login')}
+      onProfileClick={() => setView('profile')}
+      showWinPopup={showWinPopup}
+      setShowWinPopup={setShowWinPopup}
+    >
+      {renderContent()}
+    </MainLayout>
+  );
+};
+
+// --- Main Shell Layout ---
+const MainLayout = ({ 
+  children, 
+  view, 
+  setView, 
+  isLoggedIn, 
+  onProfileClick, 
+  onLoginClick,
+  showWinPopup, 
+  setShowWinPopup 
+}: { 
+  children: React.ReactNode;
+  view: ViewType;
+  setView: (v: ViewType) => void;
+  isLoggedIn: boolean;
+  onProfileClick: () => void;
+  onLoginClick: () => void;
+  showWinPopup: boolean;
+  setShowWinPopup: (s: boolean) => void;
+}) => {
+  return (
     <div className="min-h-screen pt-20 pb-20 px-4 flex flex-col items-center bg-surface-grey transition-all duration-300">
       <Navbar 
-        onLoginClick={() => setView('login')} 
+        onLoginClick={onLoginClick} 
         isLoggedIn={isLoggedIn}
-        onProfileClick={() => setView('profile')}
+        onProfileClick={onProfileClick}
       />
       
-      <main className="max-w-7xl w-full mx-auto">
-        {renderContent()}
+      <main className="max-w-7xl w-full mx-auto flex-1">
+        {children}
       </main>
 
       <AnimatePresence>
@@ -4442,7 +4889,7 @@ const AppContent = ({
         )}
       </AnimatePresence>
 
-      {view !== 'select' && (view !== 'results_detail') && (view !== 'login') && (view !== 'register') && (
+      {(view !== 'select' && view !== 'results_detail' && view !== 'login' && view !== 'register') && (
         <BottomNavbar currentView={view} setView={setView} />
       )}
     </div>
@@ -4461,6 +4908,8 @@ export default function App() {
   const [selectedLang, setSelectedLang] = useState(languages[0]);
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [lotteryConfigs, setLotteryConfigs] = useState<any[]>([]);
+  const [lotteryHistory, setLotteryHistory] = useState<Record<string, any[]>>({});
+  const [drawStates, setDrawStates] = useState<Record<string, LotteryDrawState>>({});
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'lottery_configs'), (snap) => {
@@ -4469,144 +4918,415 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // --- Lottery Draw System ---
-  const [drawStates, setDrawStates] = useState<Record<string, LotteryDrawState>>(() => {
-    const saved = localStorage.getItem('lottery_draw_states');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Ensure we handle date transitions if they are date-based
-        return parsed;
-      } catch (e) {
-        console.error("Failed to parse draw states", e);
-      }
-    }
+  useEffect(() => {
+    // Basic history listener for the lobby/results
+    const unsub = onSnapshot(query(collection(db, 'draw_history'), orderBy('timestamp', 'desc'), limit(100)), (snap) => {
+      const history: Record<string, any[]> = {};
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        const lotoId = data.lotteryId;
+        if (!history[lotoId]) history[lotoId] = [];
+        // Normalize result field to 'res' for UI consistency
+        history[lotoId].push({ 
+          id: doc.id, 
+          ...data, 
+          res: data.res || data.result || [0] 
+        });
+      });
+      setLotteryHistory(history);
+    });
+    return () => unsub();
+  }, []);
 
-    const initial: Record<string, LotteryDrawState> = {};
-    const now = Date.now();
-    lotteries.forEach(loto => {
-      let next = now + (loto.drawInterval * 1000);
-      let initialId = '1000';
-      if (!loto.specialDisplay) {
-        next = now + (22 * 3600 + 14 * 60 + 5) * 1000;
-        initialId = '2026105';
-      } else {
-        next = now + (Math.random() * loto.drawInterval * 1000);
-        const dateStr = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
-        initialId = `${dateStr}001`;
-      }
-      initial[loto.id] = { 
-        nextDraw: next, 
-        lastResult: null, 
-        drawId: initialId, 
-        lastResultTime: now 
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'draw_states'), (snap) => {
+      const states: Record<string, LotteryDrawState> = {};
+      snap.docs.forEach(doc => {
+        states[doc.id] = doc.data() as LotteryDrawState;
+      });
+      setDrawStates(states);
+    });
+    return () => unsub();
+  }, []);
+
+  // --- Initialize Draw States if missing ---
+  useEffect(() => {
+    // We allow any logged in user to check if states exist, 
+    // but only the creation logic will succeed if they are admin or if rules allow.
+    // Given the constraints, we'll try to initialize to ensure the game starts.
+    if (isLoggedIn) {
+      const initStates = async () => {
+        for (const loto of lotteries) {
+          try {
+            const docRef = doc(db, 'draw_states', loto.id);
+            const snap = await getDoc(docRef);
+            if (!snap.exists()) {
+              // Try to seed initial state
+              const now = Date.now();
+              const dateStr = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
+              const initialId = loto.specialDisplay ? `${dateStr}001` : '2026105';
+              await setDoc(docRef, {
+                nextDraw: now + (loto.drawInterval * 1000),
+                drawId: initialId,
+                lastResult: null,
+                lastResultTime: now
+              });
+            }
+          } catch (err) {
+             // Silence errors for non-admins during auto-init
+          }
+        }
       };
-    });
-    return initial;
-  });
-
-  const [lotteryHistory, setLotteryHistory] = useState<Record<string, {id: string, res: number[]}[]>>(() => {
-    const saved = localStorage.getItem('lottery_win_history');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
+      initStates();
     }
-    
-    // Seed initial history if empty
-    const initial: Record<string, {id: string, res: number[]}[]> = {};
-    lotteries.forEach(loto => {
-      if (loto.id === 'wg' || loto.id === 'f3' || loto.id === 'bh' || loto.id === 'kp') {
-        const now = Date.now();
-        const dateStr = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
-        initial[loto.id] = Array.from({ length: 15 }).map((_, i) => ({
-          id: `${dateStr}${String(15 - i).padStart(3, '0')}`,
-          res: loto.id === 'f3' ? [1,1,1] : [Math.floor(Math.random() * 10)]
-        }));
+  }, [isLoggedIn]);
+
+  const settleBets = async (lotoId: string, drawId: string, result: number[]) => {
+    try {
+      const q = query(
+        collection(db, 'purchases'), 
+        where('lotteryId', '==', lotoId),
+        where('drawId', '==', drawId),
+        where('status', '==', 'pending')
+      );
+      const snap = await getDocs(q);
+      
+      if (snap.empty) {
+        console.log(`No pending bets found for ${lotoId} draw ${drawId}`);
+        return;
       }
-    });
-    return initial;
-  });
+
+      console.log(`Settling ${snap.size} bets for ${lotoId} draw ${drawId}`);
+      
+      for (const betDoc of snap.docs) {
+        try {
+          const bet = betDoc.data();
+          let totalWinAmount = 0;
+          let hasAnyWin = false;
+          
+          // --- Win Logic ---
+          const lotoConfig = lotteryConfigs.find(c => c.id === lotoId);
+          if (lotoId === 'f3') {
+            const sumResult = (Array.isArray(result) ? result : []).reduce((a, b) => a + Number(b), 0);
+            const isBig = sumResult >= 11;
+            const isSmall = sumResult <= 10;
+            const isOdd = sumResult % 2 !== 0;
+            const isEven = sumResult % 2 === 0;
+            
+            const betList = bet.bets || bet.lines || [];
+            if (Array.isArray(betList)) {
+              betList.forEach((b: any) => {
+                let lineWon = false;
+                let odds = 1.96;
+                const betAmt = Number(b.amount || b.multiplier || (bet.amount / betList.length));
+                
+                if (b.type === 'sum') {
+                  const bVal = parseInt(b.val);
+                  if (bVal === sumResult) {
+                    lineWon = true;
+                    // Sum odds usually fixed but can be in config
+                    const sumOddsArr: Record<number, number> = { 3: 180, 4: 60, 5: 30, 6: 18, 7: 12, 8: 8, 9: 7, 10: 6, 11: 6, 12: 7, 13: 8, 14: 12, 15: 18, 16: 30, 17: 60, 18: 180 };
+                    odds = sumOddsArr[sumResult] || 2;
+                  }
+                } else if (b.type === 'binary') {
+                  const bValUpper = b.val?.toString().toUpperCase();
+                  if (bValUpper === 'BIG') {
+                    if (isBig) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.big || 1.96);
+                  } else if (bValUpper === 'SMALL') {
+                    if (isSmall) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.small || 1.96);
+                  } else if (bValUpper === 'ODD') {
+                    if (isOdd) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.odd || 1.96);
+                  } else if (bValUpper === 'EVEN') {
+                    if (isEven) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.even || 1.96);
+                  }
+                }
+                
+                if (lineWon) {
+                  totalWinAmount += betAmt * odds;
+                  hasAnyWin = true;
+                }
+              });
+            }
+          } else if (lotoId === 'wg') {
+            const res = Number(result[0]);
+            const isBig = res >= 5;
+            const isSmall = res <= 4;
+            const isOdd = res % 2 !== 0;
+            const isEven = res % 2 === 0;
+            
+            const lines = bet.lines || bet.bets || [];
+            if (Array.isArray(lines)) {
+              lines.forEach((l: any) => {
+                let lineWon = false;
+                let odds = 9;
+                const betAmt = Number(bet.amount / lines.length);
+
+                if (l.main?.map(Number).includes(res)) {
+                  lineWon = true;
+                } else if (l.type === 'binary') {
+                  const v = l.val?.toString().toUpperCase();
+                  if (v === 'BIG') {
+                    if (isBig) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.big || 1.96);
+                  } else if (v === 'SMALL') {
+                    if (isSmall) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.small || 1.96);
+                  } else if (v === 'ODD') {
+                    if (isOdd) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.odd || 1.96);
+                  } else if (v === 'EVEN') {
+                    if (isEven) lineWon = true;
+                    odds = Number(lotoConfig?.binaryOdds?.even || 1.96);
+                  } else if (v === 'GREEN') {
+                    if ([1, 3, 5, 7, 9].includes(res)) lineWon = true;
+                    odds = res === 5 ? 1.5 : 2;
+                  } else if (v === 'RED') {
+                    if ([0, 2, 4, 6, 8].includes(res)) lineWon = true;
+                    odds = res === 0 ? 1.5 : 2;
+                  } else if (v === 'PURPLE') {
+                    if ([0, 5].includes(res)) lineWon = true;
+                    odds = 4.5;
+                  }
+                }
+
+                if (lineWon) {
+                  totalWinAmount += betAmt * odds;
+                  hasAnyWin = true;
+                }
+              });
+            }
+          } else {
+            // Standard lotteries
+            if (Array.isArray(bet.lines)) {
+              bet.lines.forEach((line: any) => {
+                const matches = line.main?.filter((n: number) => result.includes(n)).length || 0;
+                if (matches >= 3) {
+                  hasAnyWin = true;
+                  totalWinAmount += matches === 3 ? 10 : matches === 4 ? 100 : 1000;
+                }
+              });
+            }
+          }
+          
+          // --- Update Purchase & Balance ---
+          await runTransaction(db, async (transaction) => {
+            const betRef = doc(db, 'purchases', betDoc.id);
+            const freshBetSnap = await transaction.get(betRef);
+            
+            if (!freshBetSnap.exists() || freshBetSnap.data().status !== 'pending') return;
+
+            transaction.update(betRef, {
+              status: hasAnyWin ? 'won' : 'lost',
+              winAmount: totalWinAmount,
+              result: result,
+              settledAt: serverTimestamp()
+            });
+            
+            if (hasAnyWin && totalWinAmount > 0) {
+              const userRef = doc(db, 'users', bet.uid);
+              transaction.update(userRef, { balance: increment(totalWinAmount) });
+            }
+          });
+        } catch (betError) {
+          console.error(`Error settling individual bet ${betDoc.id}:`, betError);
+        }
+      }
+    } catch (e) {
+      console.error("Settlement engine error:", e);
+    }
+  };
+
+  const settleAllMissingBets = async () => {
+    try {
+      let q = query(
+        collection(db, 'purchases'), 
+        where('status', '==', 'pending'),
+        limit(50)
+      );
+      
+      if (!isAdmin) {
+        if (!currentUser) return;
+        q = query(
+          collection(db, 'purchases'),
+          where('uid', '==', currentUser.uid),
+          where('status', '==', 'pending'),
+          limit(50)
+        );
+      }
+      
+      const snap = await getDocs(q);
+      
+      for (const betDoc of snap.docs) {
+        const bet = betDoc.data();
+        const historyId = `${bet.lotteryId}_${bet.drawId}`;
+        const historySnap = await getDoc(doc(db, 'draw_history', historyId));
+        
+        if (historySnap.exists()) {
+          const history = historySnap.data();
+          await settleBets(bet.lotteryId, bet.drawId, history.res || history.result);
+        }
+      }
+    } catch (e) {
+      console.error("Missing bets settlement error:", e);
+    }
+  };
+
+  // --- Admin Draw Transitions ---
+  const drawStatesRef = useRef(drawStates);
+  const isAdminRef = useRef(isAdmin);
+  const currentUserRef = useRef<any>(currentUser);
 
   useEffect(() => {
-    localStorage.setItem('lottery_draw_states', JSON.stringify(drawStates));
-  }, [drawStates]);
+    drawStatesRef.current = drawStates;
+    isAdminRef.current = isAdmin;
+    currentUserRef.current = currentUser;
+    if (isAdmin) {
+      settleAllMissingMissingBets();
+    }
+  }, [drawStates, isAdmin, currentUser]);
+
+  const settleAllMissingMissingBets = async () => {
+    // Wrap to avoid duplicate triggers if needed
+    await settleAllMissingBets();
+  };
 
   useEffect(() => {
-    localStorage.setItem('lottery_win_history', JSON.stringify(lotteryHistory));
-  }, [lotteryHistory]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
+    const timer = setInterval(async () => {
       const now = Date.now();
       
-      setDrawStates(prev => {
-        const updated = { ...prev };
-        let hasUpdate = false;
-        
-        lotteries.forEach(loto => {
-          if (!updated[loto.id]) return;
-          if (now >= updated[loto.id].nextDraw) {
-            hasUpdate = true;
-            
-            // Check for scheduled results in configs by drawId
-            const config = lotteryConfigs.find(c => c.id === loto.id);
-            let res: number[] = [];
-            const finishedDrawId = updated[loto.id].drawId;
-            
-            if (config?.scheduled_results?.[finishedDrawId]) {
-              res = config.scheduled_results[finishedDrawId];
-            } else {
-              if (loto.id === 'wg') res = [Math.floor(Math.random() * 10)];
-              else if (loto.id === 'f3') res = [Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1, Math.floor(Math.random() * 6) + 1];
-              else res = Array.from({ length: 5 }).map(() => Math.floor(Math.random() * 10));
-            }
-            
-            // Update History
-            setLotteryHistory(prevH => {
-              const gameHistory = prevH[loto.id] || [];
-              // Prevent duplicate history entry for same drawId
-              if (gameHistory.length > 0 && gameHistory[0].id === finishedDrawId) return prevH;
-              
-              const newEntry = { id: finishedDrawId, res };
-              return {
-                ...prevH,
-                [loto.id]: [newEntry, ...gameHistory].slice(0, 50)
-              };
-            });
+      // Perform draw transitions via heartbeat
+      // Transaction ensures only one person actually writes the result
+      if (!currentUserRef.current) return;
 
-            const currentDrawId = updated[loto.id].drawId;
-            const nextDrawId = loto.specialDisplay 
-              ? (() => {
-                  const dateStr = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
-                  const prefix = currentDrawId.substring(0, currentDrawId.length - 3);
-                  const seqStr = currentDrawId.substring(currentDrawId.length - 3);
-                  let seq = parseInt(seqStr) || 0;
-                  
-                  // If it's a new day, reset to 001
-                  if (prefix !== dateStr) {
-                    return `${dateStr}001`;
+      const currentStates = drawStatesRef.current;
+
+      for (const loto of lotteries) {
+        const lotoId = loto.id;
+        const state = currentStates[lotoId] as LotteryDrawState | undefined;
+
+        // If state is missing OR it is time to draw
+        if (!state || now >= state.nextDraw) {
+          try {
+            await runTransaction(db, async (transaction) => {
+              const drwRef = doc(db, 'draw_states', lotoId);
+              const drwSnap = await transaction.get(drwRef);
+              const currentData = drwSnap.exists() ? drwSnap.data() as LotteryDrawState : null;
+              
+              // Re-check nextDraw inside transaction to avoid duplicate draws
+              if (currentData && now < currentData.nextDraw) return null;
+
+              // Fetch LOTO config inside transaction
+              const configRef = doc(db, 'lottery_configs', lotoId);
+              const configSnap = await transaction.get(configRef);
+              const config = configSnap.exists() ? configSnap.data() as any : null;
+
+              let res: number[] = [];
+              
+              if (currentData && config?.scheduled_results?.[currentData.drawId]) {
+                res = config.scheduled_results[currentData.drawId];
+                // Clear the used scheduled result
+                const newScheduled = { ...config.scheduled_results };
+                delete newScheduled[currentData.drawId];
+                transaction.update(configRef, { scheduled_results: newScheduled });
+              } else if (config?.next_manual_result) {
+                res = config.next_manual_result;
+                transaction.update(configRef, { next_manual_result: null });
+              } else {
+                res = generateResult(lotoId);
+              }
+
+              const dateStr = new Date(now).toISOString().slice(0, 10).replace(/-/g, '');
+              let nextDrawId = '';
+              if (loto.specialDisplay || loto.region === 'Rapid' || loto.region === 'Daily' || loto.region === 'Virtual') {
+                const currentDrawId = currentData?.drawId || `${dateStr}000`;
+                const prefix = currentDrawId.substring(0, 8);
+                const seqStr = currentDrawId.substring(8) || '000';
+                let seq = parseInt(seqStr) || 0;
+                
+                if (prefix !== dateStr) {
+                  nextDrawId = `${dateStr}001`;
+                } else {
+                  nextDrawId = `${dateStr}${String(seq + 1).padStart(3, '0')}`;
+                }
+              } else {
+                const baseId = currentData?.drawId || '2026000';
+                nextDrawId = (parseInt(baseId) + 1).toString();
+              }
+
+              const interval = config?.drawInterval || loto.drawInterval;
+              
+              const updateData = {
+                nextDraw: now + (interval * 1000),
+                lastResult: res,
+                drawId: nextDrawId,
+                lastResultTime: now
+              };
+
+              if (drwSnap.exists()) {
+                transaction.update(drwRef, updateData);
+              } else {
+                transaction.set(drwRef, updateData);
+              }
+
+              // Robust settlement: Settle the one just finished AND any recent pending ones
+              const settlementDrawId = currentData?.drawId || 'INITIAL';
+              
+              // Also create a history record
+              const historyId = `${lotoId}_${settlementDrawId}`;
+              transaction.set(doc(db, 'draw_history', historyId), {
+                lotteryId: lotoId,
+                drawId: settlementDrawId,
+                res: res,
+                timestamp: now
+              });
+
+              const settleRecentPending = async () => {
+                try {
+                  // Settle the main one
+                  if (settlementDrawId !== 'INITIAL') {
+                    await settleBets(lotoId, settlementDrawId, res);
                   }
                   
-                  const nextSeq = (seq % 1440) + 1; // max draws per day roughly
-                  return `${dateStr}${String(nextSeq).padStart(3, '0')}`;
-                })()
-              : (parseInt(currentDrawId) + 1).toString();
+                  // Check for any other pending bets for this loto (max 5)
+                  const pq = query(
+                    collection(db, 'purchases'),
+                    where('lotteryId', '==', lotoId),
+                    where('status', '==', 'pending'),
+                    limit(20)
+                  );
+                  const psnap = await getDocs(pq);
+                  for (const pdoc of psnap.docs) {
+                    const p = pdoc.data();
+                    if (p.drawId === settlementDrawId) continue; // already handled
+                    
+                    const histId = `${lotoId}_${p.drawId}`;
+                    const histSnap = await getDoc(doc(db, 'draw_history', histId));
+                    if (histSnap.exists()) {
+                      await settleBets(lotoId, p.drawId, histSnap.data().res);
+                    }
+                  }
+                } catch (err) {
+                  console.error("Async background settlement error:", err);
+                }
+              };
 
-            updated[loto.id] = {
-              nextDraw: now + (loto.drawInterval * 1000),
-              lastResult: res,
-              drawId: nextDrawId,
-              lastResultTime: now
-            };
+              settleRecentPending();
+
+              return { res, drawId: settlementDrawId };
+            });
+          } catch (err) {
+            console.error(`Heartbeat Transition error for ${lotoId}:`, err);
           }
-        });
-        
-        return hasUpdate ? updated : prev;
-      });
-    }, 1000);
+        }
+      }
+    }, 2000); 
     return () => clearInterval(timer);
-  }, [lotteryHistory, lotteryConfigs, isAdmin]); // Added lotteryConfigs and isAdmin to dependencies
+  }, []);
+
 
   // --- Auth & Profile State ---
   useEffect(() => {
@@ -4749,7 +5469,7 @@ export default function App() {
   return (
     <LanguageContext.Provider value={{ lang: selectedLang, setLang: handleSetLang, t: getT(selectedLang.code) }}>
       <ReferralContext.Provider value={{ referrerId }}>
-        <LotteryContext.Provider value={{ drawStates, lotteryConfigs, lotteryHistory }}>
+        <LotteryContext.Provider value={{ drawStates, lotteryConfigs, lotteryHistory, settleBets }}>
           <AppContent 
             view={view} 
             setView={setView}
@@ -4767,6 +5487,7 @@ export default function App() {
             isAdmin={isAdmin}
             currentUser={currentUser}
             drawStates={drawStates}
+            onSettleMissing={settleAllMissingBets}
           />
         </LotteryContext.Provider>
       </ReferralContext.Provider>
@@ -4921,12 +5642,24 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [purchased, setPurchased] = useState(false);
   const [showSmartFollower, setShowSmartFollower] = useState(false);
+  const [isActuallyRolling, setIsActuallyRolling] = useState(false);
   const [rollingNums, setRollingNums] = useState<number[]>([1, 1, 1]);
-  const isRolling = timeLeft <= 10 && timeLeft > 0;
+
+  useEffect(() => {
+    if (timeLeft <= 10 && timeLeft > 0) {
+      setIsActuallyRolling(true);
+    }
+  }, [timeLeft]);
+
+  useEffect(() => {
+    if (currentDraw?.drawId) {
+      setIsActuallyRolling(false);
+    }
+  }, [currentDraw?.drawId]);
 
   useEffect(() => {
     let rollInterval: any;
-    if (isRolling) {
+    if (isActuallyRolling) {
       rollInterval = setInterval(() => {
         setRollingNums([
           Math.floor(Math.random() * 6) + 1,
@@ -4936,13 +5669,14 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
       }, 70);
     }
     return () => clearInterval(rollInterval);
-  }, [isRolling]);
+  }, [isActuallyRolling]);
 
   const toggleBet = (type: string, val: any) => {
     const exists = activeBets.find(b => b.type === type && b.val === val);
     if (exists) {
       setActiveBets(activeBets.filter(b => !(b.type === type && b.val === val)));
     } else {
+      // For binary bets, mutually exclusive check (optional, but keep it flexible here)
       setActiveBets([...activeBets, { type, val }]);
     }
   };
@@ -5054,20 +5788,20 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
                  <div>
                     <p className="text-white/60 text-[9px] font-black tracking-[0.2em] uppercase mb-1.5">{t('previous_result')}</p>
                     <div className="flex gap-2">
-                       {(isRolling ? rollingNums : lastResult).map((n, i) => (
+                       {(isActuallyRolling ? rollingNums : lastResult).map((n, i) => (
                          <motion.div 
                            key={i} 
                            initial={{ scale: 0.5, opacity: 0 }}
                            animate={{ 
                               scale: 1, 
                               opacity: 1,
-                              y: isRolling ? [0, -5, 0] : 0,
-                              rotate: isRolling ? [0, 10, -10, 0] : 0
+                              y: isActuallyRolling ? [0, -5, 0] : 0,
+                              rotate: isActuallyRolling ? [0, 10, -10, 0] : 0
                            }}
                            transition={{ 
-                              delay: isRolling ? 0 : i * 0.1,
-                              repeat: isRolling ? Infinity : 0,
-                              duration: isRolling ? 0.3 : 0.2
+                              delay: isActuallyRolling ? 0 : 0,
+                              repeat: isActuallyRolling ? Infinity : 0,
+                              duration: isActuallyRolling ? 0.3 : 0.2
                            }}
                            className={`w-7 h-7 rounded-sm flex items-center justify-center text-white text-[13px] font-black shadow-xl border border-white/20 ${getDiceColor(n)}`}
                          >
@@ -5148,27 +5882,46 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
                 { label: t('small'), sub: t('small_desc'), color: 'bg-brand-blue', textColor: 'text-brand-blue', val: 'SMALL', type: 'binary', odds: config?.binaryOdds?.small || 1.96 },
                 { label: t('odd'), sub: t('odd_desc'), color: 'bg-indigo-600', textColor: 'text-indigo-600', val: 'ODD', type: 'binary', odds: config?.binaryOdds?.odd || 1.96 },
                 { label: t('even'), sub: t('even_desc'), color: 'bg-slate-700', textColor: 'text-slate-700', val: 'EVEN', type: 'binary', odds: config?.binaryOdds?.even || 1.96 },
-              ].map(btn => (
-                <button
-                  key={btn.label}
-                  onClick={() => toggleBet(btn.type, btn.val)}
-                  className={`relative overflow-hidden p-3 rounded-xl transition-all active:scale-95 border-2 flex flex-col items-center
-                    ${activeBets.find(b => b.val === btn.val) 
-                      ? `${btn.color} border-transparent text-white shadow-lg` 
-                      : 'bg-white border-border-grey text-text-main hover:border-brand-blue/20'}
-                  `}
-                >
-                  <span className={`text-base font-black tracking-widest mb-0.5 ${activeBets.find(b => b.val === btn.val) ? 'text-white' : btn.textColor}`}>{btn.label}</span>
-                  <div className="flex items-center gap-1 opacity-80">
-                    <span className={`text-[8px] font-black uppercase ${activeBets.find(b => b.val === btn.val) ? 'text-white' : 'text-text-muted'}`}>
-                      {btn.sub}
-                    </span>
-                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${activeBets.find(b => b.val === btn.val) ? 'bg-white/20 text-white' : 'bg-brand-blue/5 text-brand-blue'}`}>
-                      {btn.odds}x
-                    </span>
-                  </div>
-                </button>
-              ))}
+              ].map(btn => {
+                const isSelected = activeBets.some(b => b.val === btn.val);
+                return (
+                  <button
+                    key={btn.label}
+                    onClick={() => toggleBet(btn.type, btn.val)}
+                    className={`relative overflow-hidden p-3 rounded-xl transition-all active:scale-95 border-2 flex flex-col items-center group
+                      ${isSelected 
+                        ? `${btn.color} border-transparent text-white shadow-[0_8px_30px_rgb(0,0,0,0.12)] scale-[1.02] ring-4 ring-white/10` 
+                        : 'bg-white border-border-grey text-text-main hover:border-brand-blue/30 shadow-sm'}
+                    `}
+                  >
+                    {/* Selected state accent */}
+                    {isSelected && (
+                      <motion.div 
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="absolute top-1.5 right-1.5 w-4 h-4 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"
+                      >
+                        <Check size={10} className="text-white" strokeWidth={4} />
+                      </motion.div>
+                    )}
+                    
+                    <span className={`text-base font-black tracking-widest mb-0.5 transition-colors ${isSelected ? 'text-white' : btn.textColor}`}>{btn.label}</span>
+                    <div className="flex items-center gap-1 opacity-80">
+                      <span className={`text-[8px] font-black uppercase transition-colors ${isSelected ? 'text-white/80' : 'text-text-muted'}`}>
+                        {btn.sub}
+                      </span>
+                      <span className={`text-[8px] font-black px-1.5 py-0.5 rounded transition-all ${isSelected ? 'bg-white/20 text-white' : 'bg-brand-blue/5 text-brand-blue'}`}>
+                        {btn.odds}x
+                      </span>
+                    </div>
+
+                    {/* Hover Glow */}
+                    {!isSelected && (
+                       <div className="absolute inset-0 bg-brand-blue/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                    )}
+                  </button>
+                );
+              })}
            </div>
 
            <button 
@@ -5191,13 +5944,18 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
                 <button
                   key={num}
                   onClick={() => toggleBet('sum', parseInt(num))}
-                  className={`flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all
+                  className={`flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all relative group
                     ${activeBets.find(b => b.type === 'sum' && b.val === parseInt(num))
-                      ? 'bg-brand-blue border-transparent text-white shadow-md scale-[1.05]'
-                      : 'bg-white border-border-grey hover:border-brand-blue/10'}
+                      ? 'bg-brand-blue border-transparent text-white shadow-[0_5px_15px_rgba(37,99,235,0.3)] scale-[1.08] z-10 ring-2 ring-white/20'
+                      : 'bg-white border-border-grey hover:border-brand-blue/20 hover:shadow-sm'}
                   `}
                 >
-                  <span className="text-sm font-black">{num}</span>
+                  {activeBets.find(b => b.type === 'sum' && b.val === parseInt(num)) && (
+                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-2 border-white flex items-center justify-center z-20">
+                      <Check size={8} strokeWidth={4} />
+                    </motion.div>
+                  )}
+                  <span className="text-sm font-black transition-transform group-active:scale-90">{num}</span>
                   <span className={`text-[7px] font-bold ${activeBets.find(b => b.type === 'sum' && b.val === parseInt(num)) ? 'text-white/80' : 'text-text-muted'}`}>
                     x{sumOdds[parseInt(num)]}
                   </span>
@@ -5317,5 +6075,3 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
     </div>
   );
 };
-
-

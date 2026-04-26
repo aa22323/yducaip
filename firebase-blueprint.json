@@ -90,10 +90,32 @@
               "third": { "type": "number" }
             }
           },
-          "manual_result": { "type": "array" }
+          "drawInterval": { "type": "number" },
+          "binaryOdds": {
+            "type": "object",
+            "properties": {
+              "big": { "type": "number" },
+              "small": { "type": "number" },
+              "odd": { "type": "number" },
+              "even": { "type": "number" }
+            }
+          },
+          "scheduled_results": { "type": "object" }
         }
       },
       "description": "Configuration and controls for each lottery type."
+    },
+    "draw_states/{lotteryId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "nextDraw": { "type": "number" },
+          "drawId": { "type": "string" },
+          "lastResult": { "type": "array" },
+          "lastResultTime": { "type": "number" }
+        }
+      },
+      "description": "Real-time state for each lottery."
     },
     "invite_codes/{code}": {
       "schema": {

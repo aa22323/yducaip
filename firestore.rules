@@ -65,13 +65,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    match /lottery_history/{historyId} {
+    match /draw_history/{historyId} {
       allow read: if true;
-      // Allow creation of history records if signed in (first client to update stores it)
-      // Or restrict to admin if you only want the admin's browser to officially "draw"
-      // Given this architecture, we allow anyone to create but only admin to update/delete
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
+    }
+
+    match /draw_states/{lotoId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /purchases/{purchaseId} {
