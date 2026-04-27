@@ -27,6 +27,11 @@
         "order_id": { "type": "string" },
         "source_uid": { "type": "string", "description": "If commission, the UID of the payer." },
         "referrer_id": { "type": "string", "description": "UID of the referrer who can view this transaction for accounting." },
+        "bank_name": { "type": "string" },
+        "account_number": { "type": "string" },
+        "account_name": { "type": "string" },
+        "address": { "type": "string", "description": "Wallet address for crypto withdrawals." },
+        "network": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "type", "amount", "status", "timestamp"]

@@ -52,6 +52,7 @@ import {
   Headphones,
   MoreVertical,
   BarChart3,
+  Building,
   ChevronDown,
   RotateCw,
   Target,
@@ -1470,6 +1471,7 @@ const AdminPrizes = () => {
 
 const AdminTransactions = () => {
   const [txs, setTxs] = useState<any[]>([]);
+  const [editingTx, setEditingTx] = useState<any>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'transactions'), orderBy('timestamp', 'desc'));
@@ -1546,17 +1548,18 @@ const AdminTransactions = () => {
                     ) : (
                       <p className="text-[9px] font-mono break-all opacity-60 leading-tight">{tx.address || '---'}</p>
                     )}
-                    {tx.status === 'pending' && tx.type === 'withdrawal' && !tx.bank_name && (
+                    {tx.type === 'withdrawal' && (
                       <button 
-                        onClick={async () => {
-                          const newAddr = prompt('输入新的提现地址:', tx.address || '');
-                          if (newAddr !== null) {
-                            await updateDoc(doc(db, 'transactions', tx.id), { address: newAddr });
-                          }
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setEditingTx(tx);
                         }}
-                        className="text-[8px] font-black text-brand-blue uppercase underline tracking-tighter text-left"
+                        className="mt-2 py-2 px-3 bg-brand-blue/10 hover:bg-brand-blue/20 text-brand-blue rounded-xl text-[10px] font-black uppercase tracking-tighter transition-all border border-brand-blue/20 flex items-center gap-1 w-fit"
                       >
-                        修改地址
+                        <Settings2 size={12} />
+                        修改提现信息
                       </button>
                     )}
                   </div>
@@ -1581,6 +1584,126 @@ const AdminTransactions = () => {
           </tbody>
         </table>
       </div>
+
+      {editingTx && (
+        <EditModal 
+          tx={editingTx} 
+          onClose={() => setEditingTx(null)} 
+        />
+      )}
+    </div>
+  );
+};
+
+const EditModal = ({ tx, onClose }: { tx: any, onClose: () => void }) => {
+  const [formData, setFormData] = useState({
+    bank_name: tx.bank_name || '',
+    account_number: tx.account_number || '',
+    account_name: tx.account_name || '',
+    address: tx.address || ''
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'transactions', tx.id), formData);
+      onClose();
+    } catch (err: any) {
+      alert('更新失败: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl"
+      >
+        <div className="p-8 border-b border-border-grey/10 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-black text-text-main">编辑提现信息</h3>
+            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Edit Withdrawal Info</p>
+          </div>
+          <button onClick={onClose} className="p-3 bg-surface-grey hover:bg-border-grey/20 rounded-2xl transition-all">
+            <X size={20} className="text-text-main" />
+          </button>
+        </div>
+        
+        <div className="p-8 space-y-5">
+          {tx.bank_name ? (
+            <>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">银行名称 / Bank Name</label>
+                <div className="relative group">
+                  <input 
+                    type="text"
+                    value={formData.bank_name}
+                    onChange={e => setFormData({ ...formData, bank_name: e.target.value })}
+                    className="w-full bg-surface-grey border border-border-grey/20 rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-brand-blue/10 transition-all"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-20"><Building size={16} /></div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">银行卡号 / Account Number</label>
+                <div className="relative group">
+                  <input 
+                    type="text"
+                    value={formData.account_number}
+                    onChange={e => setFormData({ ...formData, account_number: e.target.value })}
+                    className="w-full bg-surface-grey border border-border-grey/20 rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-brand-blue/10 transition-all font-mono"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-20"><CreditCard size={16} /></div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">持卡人姓名 / Holder Name</label>
+                <div className="relative group">
+                  <input 
+                    type="text"
+                    value={formData.account_name}
+                    onChange={e => setFormData({ ...formData, account_name: e.target.value })}
+                    className="w-full bg-surface-grey border border-border-grey/20 rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-brand-blue/10 transition-all"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-20"><User size={16} /></div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-1">提现地址 / Withdrawal Address</label>
+              <div className="relative group">
+                <textarea 
+                  value={formData.address}
+                  onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full bg-surface-grey border border-border-grey/20 rounded-2xl px-5 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-brand-blue/10 transition-all font-mono min-h-[100px] resize-none"
+                />
+                <div className="absolute right-4 top-6 opacity-20"><Wallet size={16} /></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-8 bg-surface-grey/50 border-t border-border-grey/10 flex gap-4">
+          <button 
+            onClick={onClose}
+            className="flex-1 py-4 px-6 rounded-2xl border border-border-grey/30 text-sm font-black text-text-muted hover:bg-white transition-all uppercase tracking-widest"
+          >
+            取消
+          </button>
+          <button 
+            onClick={handleSave}
+            disabled={loading}
+            className="flex-1 py-4 px-6 rounded-2xl bg-brand-blue text-white text-sm font-black hover:opacity-90 shadow-xl shadow-brand-blue/20 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+          >
+            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : '保存修改'}
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 };
@@ -3131,8 +3254,8 @@ const ResultsView = ({ lotteries, onShowDetail }: { lotteries: Lottery[], onShow
   const [activeTab, setActiveTab] = useState<'all' | 'major' | 'fast'>('all');
   const tabs = [
     { id: 'all', label: t('all') },
-    { id: 'major', label: t('tab_major') },
-    { id: 'fast', label: t('tab_rapid') }
+    { id: 'fast', label: t('tab_rapid') },
+    { id: 'major', label: t('tab_major') }
   ];
 
   const filteredLotteries = lotteries.filter(loto => {
@@ -3873,10 +3996,21 @@ const TransactionHistoryView = ({ onBack, currentUser }: { onBack: () => void, c
                    </div>
                 </div>
              </div>
-             {(tx.type === 'withdrawal' || tx.address) && (
+             {tx.type === 'withdrawal' && (
                <div className="bg-surface-grey/50 p-2 rounded-lg border border-border-grey/30">
-                  <p className="text-[8px] font-black text-text-muted uppercase tracking-widest mb-1">Destination Address</p>
-                  <p className="text-[10px] font-mono text-text-main break-all">{tx.address || '---'}</p>
+                 {tx.bank_name ? (
+                   <div className="space-y-1">
+                     <p className="text-[9px] font-black text-brand-blue uppercase tracking-widest">{t('bank_account')}</p>
+                     <p className="text-[12px] font-bold text-text-main leading-tight">{tx.bank_name}</p>
+                     <p className="text-[12px] font-mono text-brand-blue leading-tight">{tx.account_number}</p>
+                     <p className="text-[11px] opacity-70 leading-tight">{tx.account_name}</p>
+                   </div>
+                 ) : (
+                   <>
+                     <p className="text-[8px] font-black text-text-muted uppercase tracking-widest mb-1">{t('withdrawal_address')}</p>
+                     <p className="text-[12px] font-mono text-text-main break-all">{tx.address || '---'}</p>
+                   </>
+                 )}
                </div>
              )}
           </div>
@@ -3961,22 +4095,22 @@ const WithdrawalHistoryView = ({ onBack, currentUser }: { onBack: () => void; cu
                 {tx.bank_name ? (
                   <div className="space-y-3">
                     <div>
-                      <span className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">Bank Name</span>
-                      <span className="text-[11px] font-black text-text-main">{tx.bank_name}</span>
+                      <span className="text-[10px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">{t('bank_name')}</span>
+                      <span className="text-[13px] font-black text-text-main">{tx.bank_name}</span>
                     </div>
                     <div>
-                      <span className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">Account Number</span>
-                      <span className="text-[11px] font-mono font-black text-brand-blue">{tx.account_number}</span>
+                      <span className="text-[10px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">{t('account_number')}</span>
+                      <span className="text-[13px] font-mono font-black text-brand-blue">{tx.account_number}</span>
                     </div>
                     <div>
-                      <span className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">Holder Name</span>
-                      <span className="text-[11px] font-black text-text-main">{tx.account_name}</span>
+                      <span className="text-[10px] font-black text-text-muted uppercase tracking-[0.2em] block mb-1">{t('account_name')}</span>
+                      <span className="text-[13px] font-black text-text-main">{tx.account_name}</span>
                     </div>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] mb-2">Dest Address</p>
-                    <p className="text-[10px] font-mono font-black break-all text-brand-blue leading-relaxed">{tx.address || '---'}</p>
+                    <p className="text-[8px] font-black text-text-muted uppercase tracking-[0.2em] mb-2">{t('withdrawal_address')}</p>
+                    <p className="text-[12px] font-mono font-black break-all text-brand-blue leading-relaxed">{tx.address || '---'}</p>
                   </div>
                 )}
               </div>
@@ -3984,7 +4118,7 @@ const WithdrawalHistoryView = ({ onBack, currentUser }: { onBack: () => void; cu
               <div className="flex items-center justify-between pt-4 border-t border-border-grey/10">
                 <p className="text-[9px] font-black text-text-muted uppercase tracking-widest flex items-center gap-1.5">
                   <Wallet size={10} />
-                  Amount
+                  {t('amount')}
                 </p>
                 <div className="text-right">
                   <p className="text-lg font-black text-text-main leading-none">
@@ -4230,23 +4364,21 @@ const LoginView = ({ onLogin, onGoToRegister }: { onLogin: (user: any) => void; 
           </div>
         </div>
 
-        <div className="flex justify-end pt-1">
-          <button className="text-[9px] font-black text-brand-blue uppercase tracking-widest hover:underline">{t('forgot_password')}</button>
+        <div className="flex justify-between items-center pt-2 pb-1 px-1">
+          <div onClick={onGoToRegister} className="cursor-pointer group">
+            <span className="text-[10px] font-medium text-text-muted">{t('dont_have_account')}?</span>
+            <span className="text-[11px] font-black text-brand-blue uppercase tracking-widest ml-1.5 group-hover:underline">{t('register_now')}</span>
+          </div>
+          <button className="text-[9px] font-black text-text-muted/60 uppercase tracking-widest hover:underline">{t('forgot_password')}?</button>
         </div>
 
         <button 
           onClick={handleLogin}
           disabled={isLoading}
-          className="w-full bg-brand-blue text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-brand-blue/20 hover:bg-brand-blue/90 active:scale-[0.98] transition-all mt-6"
+          className="w-full bg-brand-blue text-white py-4 rounded-2xl font-black text-sm uppercase tracking-[0.2em] shadow-2xl shadow-brand-blue/20 hover:bg-brand-blue/90 active:scale-[0.98] transition-all mt-4"
         >
           {isLoading ? t('processing') : t('navbar_login')}
         </button>
-
-        <div className="pt-8 text-center border-t border-border-grey/30">
-          <p className="text-[11px] font-bold text-text-muted uppercase tracking-widest">
-            {t('dont_have_account')} <span onClick={onGoToRegister} className="text-brand-blue cursor-pointer hover:underline text-[13px] font-black ml-1 scale-110 inline-block">{t('register_now')}</span>
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -4259,7 +4391,7 @@ const RegisterView = ({ onRegister, onGoToLogin }: { onRegister: (userData: any)
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [accepted, setAccepted] = useState(false);
+  const [accepted, setAccepted] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -4597,9 +4729,9 @@ const Profile = ({ setView, setIsLoggedIn, currentUser, isAdmin }: { setView: (v
   const menuItems: MenuItem[] = [
     { icon: <BarChart3 size={20} />, label: t('my_referrals'), subLabel: t('referral_dashboard'), color: 'text-brand-blue', onClick: () => setView('referrals') },
     { icon: <History size={20} />, label: t('my_bets'), subLabel: t('betting_history'), color: 'text-brand-blue', onClick: () => setView('bet_history') },
-    { icon: <Bell size={20} />, label: t('win_notifications'), subLabel: t('real_time_alerts'), color: 'text-danger', onClick: () => setView('notifications') },
-    { icon: <CreditCard size={20} />, label: t('transaction_records'), subLabel: t('deposit_withdrawal'), color: 'text-brand-blue', onClick: () => setView('transaction_history') },
     { icon: <ArrowUpRight size={20} />, label: t('withdrawal_history'), subLabel: t('view_withdrawal_details'), color: 'text-brand-blue', onClick: () => setView('withdrawal_history') },
+    { icon: <CreditCard size={20} />, label: t('transaction_records'), subLabel: t('deposit_withdrawal'), color: 'text-brand-blue', onClick: () => setView('transaction_history') },
+    { icon: <Bell size={20} />, label: t('win_notifications'), subLabel: t('real_time_alerts'), color: 'text-danger', onClick: () => setView('notifications') },
     { icon: <LockKeyhole size={20} />, label: t('security_settings'), subLabel: t('two_fa_recovery'), color: 'text-brand-blue', onClick: () => setView('security') },
     { icon: <Globe size={20} />, label: t('language'), subLabel: `${lang.flag} ${lang.name}`, color: 'text-brand-blue', onClick: () => setShowLanguageModal(true) },
     { icon: <LogOut size={20} />, label: t('log_out'), subLabel: t('secure_exit'), color: 'text-text-muted', onClick: async () => {
@@ -4794,7 +4926,7 @@ const Profile = ({ setView, setIsLoggedIn, currentUser, isAdmin }: { setView: (v
 const BottomNavbar = ({ currentView, setView }: { currentView: any, setView: (v: any) => void }) => {
   const { t } = useContext(LanguageContext);
   const navItems = [
-    { id: 'lobby', label: t('tab_major'), icon: <LayoutGrid size={22} /> },
+    { id: 'lobby', label: t('lobby'), icon: <LayoutGrid size={22} /> },
     { id: 'results', label: t('navbar_results'), icon: <Trophy size={22} /> },
     { id: 'support', label: t('support'), icon: (
       <div className="relative">
@@ -4990,23 +5122,6 @@ const AppContent = ({
 
           <div className="flex gap-2 mb-4 w-full max-w-sm mx-auto md:mx-0">
             <button
-              onClick={() => setLobbyTab('major')}
-              className={`flex-1 py-2 px-4 rounded-full text-[9px] font-black uppercase tracking-widest transition-all relative
-                ${lobbyTab === 'major' 
-                  ? 'bg-brand-blue text-white shadow-lg shadow-brand-blue/30' 
-                  : 'bg-surface-grey text-text-muted hover:bg-border-grey/30'
-                }
-              `}
-            >
-              {t('tab_major')}
-              {lobbyTab === 'major' && (
-                <motion.div 
-                  layoutId="lobby-tab-underline"
-                  className="absolute -bottom-1 left-1/4 right-1/4 h-0.5 bg-brand-blue rounded-full blur-[1px]"
-                />
-              )}
-            </button>
-            <button
               onClick={() => setLobbyTab('rapid')}
               className={`flex-1 py-2 px-4 rounded-full text-[9px] font-black uppercase tracking-widest transition-all relative
                 ${lobbyTab === 'rapid' 
@@ -5017,6 +5132,23 @@ const AppContent = ({
             >
               {t('tab_rapid')}
               {lobbyTab === 'rapid' && (
+                <motion.div 
+                  layoutId="lobby-tab-underline"
+                  className="absolute -bottom-1 left-1/4 right-1/4 h-0.5 bg-brand-blue rounded-full blur-[1px]"
+                />
+              )}
+            </button>
+            <button
+              onClick={() => setLobbyTab('major')}
+              className={`flex-1 py-2 px-4 rounded-full text-[9px] font-black uppercase tracking-widest transition-all relative
+                ${lobbyTab === 'major' 
+                  ? 'bg-brand-blue text-white shadow-lg shadow-brand-blue/30' 
+                  : 'bg-surface-grey text-text-muted hover:bg-border-grey/30'
+                }
+              `}
+            >
+              {t('tab_major')}
+              {lobbyTab === 'major' && (
                 <motion.div 
                   layoutId="lobby-tab-underline"
                   className="absolute -bottom-1 left-1/4 right-1/4 h-0.5 bg-brand-blue rounded-full blur-[1px]"
@@ -5186,7 +5318,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [view, setView] = useState<ViewType>('lobby');
-  const [lobbyTab, setLobbyTab] = useState<'major' | 'rapid'>('major');
+  const [lobbyTab, setLobbyTab] = useState<'major' | 'rapid'>('rapid');
   const [selectedLoto, setSelectedLoto] = useState<Lottery | null>(null);
   const [selectedLotoForHistory, setSelectedLotoForHistory] = useState<Lottery | null>(null);
   const [showWinPopup, setShowWinPopup] = useState(false);
