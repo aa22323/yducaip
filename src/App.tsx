@@ -1547,7 +1547,10 @@ const AdminTransactions = ({ userMap = {} }: { userMap?: Record<string, any> }) 
                   <div className="flex flex-col">
                     <span className="text-[11px] font-mono whitespace-nowrap">{tx.uid?.toString().substring(0, 10) || 'Unknown'}...</span>
                     {userMap[tx.uid] && (
-                      <span className="text-[9px] font-bold text-brand-blue truncate max-w-[100px]">{userMap[tx.uid].email}</span>
+                      <>
+                        <span className="text-[10px] font-bold text-brand-blue truncate max-w-[120px]">{userMap[tx.uid].email}</span>
+                        <span className="text-[8px] font-black text-amber-600 mt-0.5">Bal: {userMap[tx.uid].balance?.toFixed(2)} USDT</span>
+                      </>
                     )}
                   </div>
                 </td>
@@ -1756,11 +1759,11 @@ const AdminBets = ({ userMap = {} }: { userMap?: Record<string, any> }) => {
                    <div className="flex items-center gap-2">
                       <p className="text-[10px] text-text-muted font-mono opacity-50">{bet.uid?.toString().substring(0, 8)}...</p>
                       {userMap[bet.uid] ? (
-                        <span className="text-[10px] font-bold text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded-full border border-brand-blue/10">
+                        <span className="text-[11px] font-bold text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded-full border border-brand-blue/10 max-w-[140px] truncate">
                            {userMap[bet.uid].email}
                         </span>
                       ) : bet.userEmail ? (
-                         <span className="text-[10px] font-bold text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded-full border border-brand-blue/10">
+                         <span className="text-[11px] font-bold text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded-full border border-brand-blue/10 max-w-[140px] truncate">
                            {bet.userEmail}
                          </span>
                       ) : null}
@@ -1807,16 +1810,16 @@ const AdminBets = ({ userMap = {} }: { userMap?: Record<string, any> }) => {
 };
 
 const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
-  const [users, setUsers] = useState<any[]>(initialUsers);
+  const [searchTerm, setSearchTerm] = useState('');
   const [admins, setAdmins] = useState<string[]>([]);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [lastSync, setLastSync] = useState(new Date());
 
   useEffect(() => {
-    setUsers(initialUsers);
+    setLastSync(new Date());
   }, [initialUsers]);
 
   useEffect(() => {
-    // We already have users from props, but let's keep the admin listener
     const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
       setAdmins(snap.docs.map(doc => doc.id));
     });
@@ -1825,6 +1828,23 @@ const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
       unsubAdmins();
     };
   }, []);
+
+  const filteredUsers = useMemo(() => {
+    return (initialUsers || []).filter(u => 
+      u.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.invite_code?.toLowerCase().includes(searchTerm.toLowerCase())
+    ).sort((a, b) => {
+       if (!a || !b) return 0;
+       const aIsAdmin = (admins || []).includes(a.id);
+       const bIsAdmin = (admins || []).includes(b.id);
+       if (aIsAdmin && !bIsAdmin) return -1;
+       if (!aIsAdmin && bIsAdmin) return 1;
+       // Sort by balance desc if both are same role
+       return (b.balance || 0) - (a.balance || 0);
+    });
+  }, [initialUsers, searchTerm, admins]);
 
   const handleUpdateUser = async (e: any) => {
     e.preventDefault();
@@ -1865,18 +1885,33 @@ const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-xl font-black text-text-main">用户管理</h3>
-          <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">User Database & Permissions</p>
+          <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">
+            Real-time Sync: <span className="text-brand-blue">{lastSync.toLocaleTimeString()}</span>
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-[10px] font-black text-brand-blue bg-brand-blue/5 border border-brand-blue/10 px-4 py-1.5 rounded-full">
             <Users size={12} />
-            {users.length} TOTAL
+            {initialUsers.length} TOTAL
           </div>
           <div className="flex items-center gap-2 text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-4 py-1.5 rounded-full">
             <Shield size={12} />
             {admins.length} ADMINS
           </div>
         </div>
+      </div>
+
+      <div className="relative group">
+        <div className="absolute inset-y-0 left-5 flex items-center pointer-events-none text-text-muted group-focus-within:text-brand-blue transition-colors">
+          <Search size={18} />
+        </div>
+        <input 
+          type="text" 
+          placeholder="搜索用户名, 邮箱, ID 或邀请码..." 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full bg-surface-grey border border-border-grey rounded-2xl pl-14 pr-6 py-4 text-sm font-bold focus:ring-4 focus:ring-brand-blue/10 outline-none transition-all shadow-sm"
+        />
       </div>
 
       {/* Compact User Table */}
@@ -1893,14 +1928,7 @@ const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-grey/50">
-              {(users || []).sort((a, b) => {
-                 if (!a || !b) return 0;
-                 const aIsAdmin = (admins || []).includes(a.id);
-                 const bIsAdmin = (admins || []).includes(b.id);
-                 if (aIsAdmin && !bIsAdmin) return -1;
-                 if (!aIsAdmin && bIsAdmin) return 1;
-                 return 0;
-              }).map(user => {
+              {filteredUsers.map(user => {
                 if (!user) return null;
                 const userIsAdmin = (admins || []).includes(user.id);
                 return (
@@ -1912,7 +1940,7 @@ const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs font-black text-text-main truncate">{user.displayName || 'Guest'}</p>
-                          <p className="text-[9px] text-text-muted font-mono truncate">{user.email}</p>
+                          <p className="text-[11px] text-text-muted font-bold truncate">{user.email}</p>
                         </div>
                       </div>
                     </td>
@@ -1957,7 +1985,7 @@ const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
                  </div>
                  <div>
                     <h4 className="text-lg font-black text-text-main leading-tight">用户设置</h4>
-                    <p className="text-xs text-text-muted font-mono">{editingUser.email}</p>
+                    <p className="text-sm text-brand-blue font-bold tracking-tight">{editingUser.email}</p>
                  </div>
               </div>
 
