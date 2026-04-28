@@ -6312,15 +6312,15 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
            {history.slice(0, 10).map((record, i) => (
              <div key={record.id} className="flex flex-col items-center gap-2 min-w-[34px]">
                 <div className="flex flex-col gap-1">
-                  <div className={`w-7 h-7 rounded-sm border flex items-center justify-center text-[11px] font-black shadow-sm transition-all
+                  <div className={`w-8 h-8 rounded-sm border flex items-center justify-center text-[8px] font-black shadow-sm transition-all
                     ${record.isBig ? 'bg-danger/5 border-danger/20 text-danger' : 'bg-brand-blue/5 border-brand-blue/20 text-brand-blue'}
                   `}>
-                    {record.isBig ? t('big') : t('small')}
+                    {record.isBig ? 'BIG' : 'SMALL'}
                   </div>
-                  <div className={`w-7 h-7 rounded-sm border flex items-center justify-center text-[11px] font-black shadow-sm transition-all
+                  <div className={`w-8 h-8 rounded-sm border flex items-center justify-center text-[8px] font-black shadow-sm transition-all
                     ${record.isOdd ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-700'}
                   `}>
-                    {record.isOdd ? t('odd') : t('even')}
+                    {record.isOdd ? 'ODD' : 'EVEN'}
                   </div>
                 </div>
                 <span className="text-[9px] font-black font-mono text-text-muted/80 tracking-tighter">{record.id.toString().slice(-3)}</span>
@@ -6446,11 +6446,11 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
                       </div>
                    </div>
                    <div className="flex gap-1">
-                      <div className={`w-8 py-1 rounded text-[9px] font-black text-center ${record.isBig ? 'bg-danger/10 text-danger' : 'bg-brand-blue/10 text-brand-blue'}`}>
-                         {record.isBig ? '大' : '小'}
+                      <div className={`w-10 py-1 rounded text-[8px] font-black text-center ${record.isBig ? 'bg-danger/10 text-danger' : 'bg-brand-blue/10 text-brand-blue'}`}>
+                         {record.isBig ? 'BIG' : 'SMALL'}
                       </div>
-                      <div className={`w-8 py-1 rounded text-[9px] font-black text-center ${record.isOdd ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-700'}`}>
-                         {record.isOdd ? '单' : '双'}
+                      <div className={`w-10 py-1 rounded text-[8px] font-black text-center ${record.isOdd ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-700'}`}>
+                         {record.isOdd ? 'ODD' : 'EVEN'}
                       </div>
                    </div>
                 </div>
