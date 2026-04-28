@@ -1090,11 +1090,11 @@ const generateResult = (lotoId: string): number[] => {
 };
 
 const lotteries: Lottery[] = [
-  { id: 'pb', name: 'Powerball', region: 'region_us', jackpot: '945M', currencySymbol: '$', color: 'red', logoPlaceholder: 'P', flag: '🇺🇸', tag: 'Hot', drawInterval: 86400 },
+  { id: 'f3', name: 'Fast 3', region: 'Rapid', jackpot: '10,000x', currencySymbol: '$', color: 'red', logoPlaceholder: 'F3', flag: '🎲', specialDisplay: 'fast3', tag: 'Hot', drawInterval: 300 },
   { id: 'mm', name: 'Mega Millions', region: 'region_us', jackpot: '1.2B', currencySymbol: '$', color: 'orange', logoPlaceholder: 'MM', flag: '🇺🇸', tag: 'Gigantic', drawInterval: 86400 },
   { id: 'wg', name: 'Wingo 5M', region: 'Rapid', jackpot: '9,000x', currencySymbol: '$', color: 'green', logoPlaceholder: 'WG', flag: '🚦', specialDisplay: 'wingo', tag: 'New', drawInterval: 300 },
   { id: 'l7', name: 'LOTO 7', region: 'region_jp', jackpot: '1.0B', currencySymbol: '¥', color: 'blue', logoPlaceholder: '7', flag: '🇯🇵', tag: 'Weekly', drawInterval: 86400 },
-  { id: 'f3', name: 'Fast 3', region: 'Rapid', jackpot: '10,000x', currencySymbol: '$', color: 'red', logoPlaceholder: 'F3', flag: '🎲', specialDisplay: 'fast3', tag: 'Hot', drawInterval: 300 },
+  { id: 'pb', name: 'Powerball', region: 'region_us', jackpot: '945M', currencySymbol: '$', color: 'red', logoPlaceholder: 'P', flag: '🇺🇸', tag: 'Hot', drawInterval: 86400 },
   { id: 'bh', name: 'Bitcoin Hash', region: 'Virtual', jackpot: '2,400.00 BTC', currencySymbol: '₿', color: 'cyan', logoPlaceholder: 'HASH', flag: '⚡', specialDisplay: 'hash', tag: 'Live', drawInterval: 300 },
   { id: 'em', name: 'EuroMillions', region: 'region_eu', jackpot: '190M', currencySymbol: '€', color: 'indigo', logoPlaceholder: 'EM', flag: '🇪🇺', drawInterval: 86400 },
   { id: 'vl', name: 'Mega 6/45', region: 'region_vn', jackpot: '150B', currencySymbol: '₫', color: 'red', logoPlaceholder: 'VL', flag: '🇻🇳', drawInterval: 86400 },
