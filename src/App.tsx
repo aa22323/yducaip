@@ -1107,6 +1107,20 @@ const lotteries: Lottery[] = [
 const AdminDashboard = ({ onBack, drawStates, onSettleMissing }: { onBack: () => void, drawStates: Record<string, LotteryDrawState>, onSettleMissing?: () => Promise<void> }) => {
   const { t } = useContext(LanguageContext);
   const [activeTab, setActiveTab] = useState<'draws' | 'prizes' | 'transactions' | 'bets' | 'users' | 'settings'>('draws');
+  const [users, setUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+      setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsub();
+  }, []);
+
+  const userMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    users.forEach(u => map[u.id] = u);
+    return map;
+  }, [users]);
 
   const tabs = [
     { id: 'draws', label: '开奖管理', icon: <Target size={16} /> },
@@ -1158,9 +1172,9 @@ const AdminDashboard = ({ onBack, drawStates, onSettleMissing }: { onBack: () =>
         <div className="flex-1 bg-white rounded-[2.5rem] border border-border-grey shadow-2xl p-8 min-h-[700px] w-full">
           {activeTab === 'draws' && <AdminDraws drawStates={drawStates} onSettleMissing={onSettleMissing} />}
           {activeTab === 'prizes' && <AdminPrizes />}
-          {activeTab === 'transactions' && <AdminTransactions />}
-          {activeTab === 'bets' && <AdminBets />}
-          {activeTab === 'users' && <AdminUsers />}
+          {activeTab === 'transactions' && <AdminTransactions userMap={userMap} />}
+          {activeTab === 'bets' && <AdminBets userMap={userMap} />}
+          {activeTab === 'users' && <AdminUsers initialUsers={users} />}
           {activeTab === 'settings' && <AdminSettings />}
         </div>
       </div>
@@ -1469,7 +1483,7 @@ const AdminPrizes = () => {
   );
 };
 
-const AdminTransactions = () => {
+const AdminTransactions = ({ userMap = {} }: { userMap?: Record<string, any> }) => {
   const [txs, setTxs] = useState<any[]>([]);
   const [editingTx, setEditingTx] = useState<any>(null);
 
@@ -1529,7 +1543,14 @@ const AdminTransactions = () => {
           <tbody className="divide-y divide-border-grey/50">
             {txs.filter(t => t.type === 'deposit' || t.type === 'withdrawal').map(tx => (
               <tr key={tx.id} className="hover:bg-surface-grey/30">
-                <td className="py-4 text-[11px] font-mono">{tx.uid?.toString().substring(0, 10) || 'Unknown'}...</td>
+                <td className="py-4">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-mono whitespace-nowrap">{tx.uid?.toString().substring(0, 10) || 'Unknown'}...</span>
+                    {userMap[tx.uid] && (
+                      <span className="text-[9px] font-bold text-brand-blue truncate max-w-[100px]">{userMap[tx.uid].email}</span>
+                    )}
+                  </div>
+                </td>
                 <td className="py-4">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${tx.type === 'deposit' ? 'bg-success/10 text-success' : 'bg-brand-blue/10 text-brand-blue'}`}>
                     {tx.type === 'deposit' ? '充值' : '提现'}
@@ -1708,7 +1729,7 @@ const EditModal = ({ tx, onClose }: { tx: any, onClose: () => void }) => {
   );
 };
 
-const AdminBets = () => {
+const AdminBets = ({ userMap = {} }: { userMap?: Record<string, any> }) => {
   const { t } = useContext(LanguageContext);
   const [bets, setBets] = useState<any[]>([]);
 
@@ -1732,7 +1753,18 @@ const AdminBets = () => {
                 </div>
                 <div>
                    <p className="text-xs font-black text-text-main">{bet.lotteryId} | DRAW # {bet.drawId || 'LIVE'}</p>
-                   <p className="text-[10px] text-text-muted font-mono">{bet.uid}</p>
+                   <div className="flex items-center gap-2">
+                      <p className="text-[10px] text-text-muted font-mono opacity-50">{bet.uid?.toString().substring(0, 8)}...</p>
+                      {userMap[bet.uid] ? (
+                        <span className="text-[10px] font-bold text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded-full border border-brand-blue/10">
+                           {userMap[bet.uid].email}
+                        </span>
+                      ) : bet.userEmail ? (
+                         <span className="text-[10px] font-bold text-brand-blue bg-brand-blue/5 px-2 py-0.5 rounded-full border border-brand-blue/10">
+                           {bet.userEmail}
+                         </span>
+                      ) : null}
+                   </div>
                 </div>
              </div>
              <div className="flex-1 flex flex-wrap gap-2 justify-center">
@@ -1774,22 +1806,22 @@ const AdminBets = () => {
   );
 };
 
-const AdminUsers = () => {
-  const [users, setUsers] = useState<any[]>([]);
+const AdminUsers = ({ initialUsers = [] }: { initialUsers?: any[] }) => {
+  const [users, setUsers] = useState<any[]>(initialUsers);
   const [admins, setAdmins] = useState<string[]>([]);
   const [editingUser, setEditingUser] = useState<any>(null);
 
   useEffect(() => {
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    
+    setUsers(initialUsers);
+  }, [initialUsers]);
+
+  useEffect(() => {
+    // We already have users from props, but let's keep the admin listener
     const unsubAdmins = onSnapshot(collection(db, 'admins'), (snap) => {
       setAdmins(snap.docs.map(doc => doc.id));
     });
     
     return () => {
-      unsubUsers();
       unsubAdmins();
     };
   }, []);
@@ -2663,6 +2695,7 @@ const TicketSelection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lot
         const purchaseRef = doc(collection(db, 'purchases'));
         transaction.set(purchaseRef, {
           uid: currentUser.uid,
+          userEmail: currentUser.email,
           lotteryId: lottery.id,
           lotteryName: lottery.name,
           drawId: currentDraw?.drawId || 'unknown',
@@ -5319,6 +5352,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [view, setView] = useState<ViewType>('lobby');
   const [lobbyTab, setLobbyTab] = useState<'major' | 'rapid'>('rapid');
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [view]);
+
   const [selectedLoto, setSelectedLoto] = useState<Lottery | null>(null);
   const [selectedLotoForHistory, setSelectedLotoForHistory] = useState<Lottery | null>(null);
   const [showWinPopup, setShowWinPopup] = useState(false);
@@ -6127,6 +6165,7 @@ const Fast3Selection = ({ lottery, onBack, onWin, currentUser }: { lottery: Lott
         const purchaseRef = doc(collection(db, 'purchases'));
         transaction.set(purchaseRef, {
           uid: currentUser.uid,
+          userEmail: currentUser.email,
           lotteryId: lottery.id,
           lotteryName: lottery.name,
           drawId: currentDraw?.drawId || 'unknown',
