@@ -5103,7 +5103,8 @@ const AppContent = ({
   isAdmin,
   currentUser,
   drawStates,
-  onSettleMissing
+  onSettleMissing,
+  hasQuotaError
 }: {
   view: ViewType;
   setView: (v: ViewType) => void;
@@ -5122,6 +5123,7 @@ const AppContent = ({
   currentUser: any;
   drawStates: Record<string, LotteryDrawState>;
   onSettleMissing?: () => Promise<void>;
+  hasQuotaError?: boolean;
 }) => {
   const { t } = useContext(LanguageContext);
 
@@ -5323,6 +5325,7 @@ const AppContent = ({
       onProfileClick={() => setView('profile')}
       showWinPopup={showWinPopup}
       setShowWinPopup={setShowWinPopup}
+      hasQuotaError={hasQuotaError}
     >
       {renderContent()}
     </MainLayout>
@@ -5338,7 +5341,8 @@ const MainLayout = ({
   onProfileClick, 
   onLoginClick,
   showWinPopup, 
-  setShowWinPopup 
+  setShowWinPopup,
+  hasQuotaError
 }: { 
   children: React.ReactNode;
   view: ViewType;
@@ -5348,9 +5352,16 @@ const MainLayout = ({
   onLoginClick: () => void;
   showWinPopup: boolean;
   setShowWinPopup: (s: boolean) => void;
+  hasQuotaError?: boolean;
 }) => {
   return (
     <div className="min-h-screen pt-20 pb-20 px-4 flex flex-col items-center bg-surface-grey transition-all duration-300">
+      {hasQuotaError && (
+        <div className="fixed top-0 left-0 right-0 z-[1000] bg-danger text-white px-4 py-2 text-center text-[10px] font-black shadow-xl flex items-center justify-center gap-2">
+          <AlertCircle size={14} />
+          <span>SERVER DATABASE QUOTA EXCEEDED - GAMEPLAY AND BALANCES MAY BE DELAYED. PLEASE REFRESH LATER.</span>
+        </div>
+      )}
       <Navbar 
         onLoginClick={onLoginClick} 
         isLoggedIn={isLoggedIn}
@@ -5374,10 +5385,61 @@ const MainLayout = ({
   );
 };
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  // Check specifically for quota
+  if (errInfo.error.toLowerCase().includes('quota') || errInfo.error.toLowerCase().includes('limit')) {
+    console.error("FIREBASE QUOTA EXCEEDED - Application logic may pause.");
+    // We update a global event/state if possible, but here we'll just log
+    // In a real app we'd dispatch a custom event
+    window.dispatchEvent(new CustomEvent('firestore-quota-error'));
+  }
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [hasQuotaError, setHasQuotaError] = useState(false);
+
+  useEffect(() => {
+    const handleQuota = () => setHasQuotaError(true);
+    window.addEventListener('firestore-quota-error', handleQuota);
+    return () => window.removeEventListener('firestore-quota-error', handleQuota);
+  }, []);
   const [view, setView] = useState<ViewType>('lobby');
   const [lobbyTab, setLobbyTab] = useState<'major' | 'rapid'>('rapid');
 
@@ -5397,6 +5459,8 @@ export default function App() {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'lottery_configs'), (snap) => {
       setLotteryConfigs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'lottery_configs');
     });
     return () => unsub();
   }, []);
@@ -5417,6 +5481,8 @@ export default function App() {
         });
       });
       setLotteryHistory(history);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'draw_history');
     });
     return () => unsub();
   }, []);
@@ -5428,6 +5494,8 @@ export default function App() {
         states[doc.id] = doc.data() as LotteryDrawState;
       });
       setDrawStates(states);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'draw_states');
     });
     return () => unsub();
   }, []);
@@ -5481,127 +5549,121 @@ export default function App() {
 
       console.log(`Settling ${snap.size} bets for ${lotoId} draw ${drawId}`);
       
-      for (const betDoc of snap.docs) {
-        try {
-          const bet = betDoc.data();
-          let totalWinAmount = 0;
-          let hasAnyWin = false;
-          
-          // --- Win Logic ---
-          const lotoConfig = lotteryConfigs.find(c => c.id === lotoId);
-          if (lotoId === 'f3') {
-            const sumResult = (Array.isArray(result) ? result : []).reduce((a, b) => a + Number(b), 0);
-            const isBig = sumResult >= 11;
-            const isSmall = sumResult <= 10;
-            const isOdd = sumResult % 2 !== 0;
-            const isEven = sumResult % 2 === 0;
+      await runTransaction(db, async (transaction) => {
+        for (const betDoc of snap.docs) {
+          try {
+            const bet = betDoc.data();
+            let totalWinAmount = 0;
+            let hasAnyWin = false;
             
-            const betList = bet.bets || bet.lines || [];
-            if (Array.isArray(betList)) {
-              betList.forEach((b: any) => {
-                let lineWon = false;
-                let odds = 1.96;
-                const betAmt = Number(b.amount || b.multiplier || (bet.amount / betList.length));
-                
-                if (b.type === 'sum') {
-                  const bVal = parseInt(b.val);
-                  if (bVal === sumResult) {
+            // --- Win Logic ---
+            const lotoConfig = lotteryConfigs.find(c => c.id === lotoId);
+            if (lotoId === 'f3') {
+              const sumResult = (Array.isArray(result) ? result : []).reduce((a: number, b: any) => a + Number(b), 0);
+              const isBig = sumResult >= 11;
+              const isSmall = sumResult <= 10;
+              const isOdd = sumResult % 2 !== 0;
+              const isEven = sumResult % 2 === 0;
+              
+              const betList = bet.bets || bet.lines || [];
+              if (Array.isArray(betList)) {
+                betList.forEach((b: any) => {
+                  let lineWon = false;
+                  let odds = 1.96;
+                  const betAmt = Number(b.amount || b.multiplier || (bet.amount / betList.length));
+                  
+                  if (b.type === 'sum') {
+                    const bVal = parseInt(b.val);
+                    if (bVal === sumResult) {
+                      lineWon = true;
+                      const sumOddsArr: Record<number, number> = { 3: 180, 4: 60, 5: 30, 6: 18, 7: 12, 8: 8, 9: 7, 10: 6, 11: 6, 12: 7, 13: 8, 14: 12, 15: 18, 16: 30, 17: 60, 18: 180 };
+                      odds = sumOddsArr[sumResult] || 2;
+                    }
+                  } else if (b.type === 'binary') {
+                    const bValUpper = b.val?.toString().toUpperCase();
+                    if (bValUpper === 'BIG') {
+                      if (isBig) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.big || 1.96);
+                    } else if (bValUpper === 'SMALL') {
+                      if (isSmall) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.small || 1.96);
+                    } else if (bValUpper === 'ODD') {
+                      if (isOdd) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.odd || 1.96);
+                    } else if (bValUpper === 'EVEN') {
+                      if (isEven) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.even || 1.96);
+                    }
+                  }
+                  
+                  if (lineWon) {
+                    totalWinAmount += betAmt * odds;
+                    hasAnyWin = true;
+                  }
+                });
+              }
+            } else if (lotoId === 'wg') {
+              const res = Number(result[0]);
+              const isBig = res >= 5;
+              const isSmall = res <= 4;
+              const isOdd = res % 2 !== 0;
+              const isEven = res % 2 === 0;
+              
+              const lines = bet.lines || bet.bets || [];
+              if (Array.isArray(lines)) {
+                lines.forEach((l: any) => {
+                  let lineWon = false;
+                  let odds = 9;
+                  const betAmt = Number(bet.amount / lines.length);
+
+                  if (l.main?.map(Number).includes(res)) {
                     lineWon = true;
-                    // Sum odds usually fixed but can be in config
-                    const sumOddsArr: Record<number, number> = { 3: 180, 4: 60, 5: 30, 6: 18, 7: 12, 8: 8, 9: 7, 10: 6, 11: 6, 12: 7, 13: 8, 14: 12, 15: 18, 16: 30, 17: 60, 18: 180 };
-                    odds = sumOddsArr[sumResult] || 2;
+                  } else if (l.type === 'binary') {
+                    const v = l.val?.toString().toUpperCase();
+                    if (v === 'BIG') {
+                      if (isBig) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.big || 1.96);
+                    } else if (v === 'SMALL') {
+                      if (isSmall) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.small || 1.96);
+                    } else if (v === 'ODD') {
+                      if (isOdd) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.odd || 1.96);
+                    } else if (v === 'EVEN') {
+                      if (isEven) lineWon = true;
+                      odds = Number(lotoConfig?.binaryOdds?.even || 1.96);
+                    } else if (v === 'GREEN') {
+                      if ([1, 3, 5, 7, 9].includes(res)) lineWon = true;
+                      odds = res === 5 ? 1.5 : 2;
+                    } else if (v === 'RED') {
+                      if ([0, 2, 4, 6, 8].includes(res)) lineWon = true;
+                      odds = res === 0 ? 1.5 : 2;
+                    } else if (v === 'PURPLE') {
+                      if ([0, 5].includes(res)) lineWon = true;
+                      odds = 4.5;
+                    }
                   }
-                } else if (b.type === 'binary') {
-                  const bValUpper = b.val?.toString().toUpperCase();
-                  if (bValUpper === 'BIG') {
-                    if (isBig) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.big || 1.96);
-                  } else if (bValUpper === 'SMALL') {
-                    if (isSmall) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.small || 1.96);
-                  } else if (bValUpper === 'ODD') {
-                    if (isOdd) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.odd || 1.96);
-                  } else if (bValUpper === 'EVEN') {
-                    if (isEven) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.even || 1.96);
+
+                  if (lineWon) {
+                    totalWinAmount += betAmt * odds;
+                    hasAnyWin = true;
                   }
-                }
-                
-                if (lineWon) {
-                  totalWinAmount += betAmt * odds;
-                  hasAnyWin = true;
-                }
-              });
+                });
+              }
+            } else {
+              if (Array.isArray(bet.lines)) {
+                bet.lines.forEach((line: any) => {
+                  const matches = line.main?.filter((n: number) => result.includes(n)).length || 0;
+                  if (matches >= 3) {
+                    hasAnyWin = true;
+                    totalWinAmount += matches === 3 ? 10 : matches === 4 ? 100 : 1000;
+                  }
+                });
+              }
             }
-          } else if (lotoId === 'wg') {
-            const res = Number(result[0]);
-            const isBig = res >= 5;
-            const isSmall = res <= 4;
-            const isOdd = res % 2 !== 0;
-            const isEven = res % 2 === 0;
             
-            const lines = bet.lines || bet.bets || [];
-            if (Array.isArray(lines)) {
-              lines.forEach((l: any) => {
-                let lineWon = false;
-                let odds = 9;
-                const betAmt = Number(bet.amount / lines.length);
-
-                if (l.main?.map(Number).includes(res)) {
-                  lineWon = true;
-                } else if (l.type === 'binary') {
-                  const v = l.val?.toString().toUpperCase();
-                  if (v === 'BIG') {
-                    if (isBig) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.big || 1.96);
-                  } else if (v === 'SMALL') {
-                    if (isSmall) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.small || 1.96);
-                  } else if (v === 'ODD') {
-                    if (isOdd) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.odd || 1.96);
-                  } else if (v === 'EVEN') {
-                    if (isEven) lineWon = true;
-                    odds = Number(lotoConfig?.binaryOdds?.even || 1.96);
-                  } else if (v === 'GREEN') {
-                    if ([1, 3, 5, 7, 9].includes(res)) lineWon = true;
-                    odds = res === 5 ? 1.5 : 2;
-                  } else if (v === 'RED') {
-                    if ([0, 2, 4, 6, 8].includes(res)) lineWon = true;
-                    odds = res === 0 ? 1.5 : 2;
-                  } else if (v === 'PURPLE') {
-                    if ([0, 5].includes(res)) lineWon = true;
-                    odds = 4.5;
-                  }
-                }
-
-                if (lineWon) {
-                  totalWinAmount += betAmt * odds;
-                  hasAnyWin = true;
-                }
-              });
-            }
-          } else {
-            // Standard lotteries
-            if (Array.isArray(bet.lines)) {
-              bet.lines.forEach((line: any) => {
-                const matches = line.main?.filter((n: number) => result.includes(n)).length || 0;
-                if (matches >= 3) {
-                  hasAnyWin = true;
-                  totalWinAmount += matches === 3 ? 10 : matches === 4 ? 100 : 1000;
-                }
-              });
-            }
-          }
-          
-          // --- Update Purchase & Balance ---
-          await runTransaction(db, async (transaction) => {
+            // --- Queue Update in Transaction ---
             const betRef = doc(db, 'purchases', betDoc.id);
-            const freshBetSnap = await transaction.get(betRef);
-            
-            if (!freshBetSnap.exists() || freshBetSnap.data().status !== 'pending') return;
-
             transaction.update(betRef, {
               status: hasAnyWin ? 'won' : 'lost',
               winAmount: totalWinAmount,
@@ -5613,11 +5675,11 @@ export default function App() {
               const userRef = doc(db, 'users', bet.uid);
               transaction.update(userRef, { balance: increment(totalWinAmount) });
             }
-          });
-        } catch (betError) {
-          console.error(`Error settling individual bet ${betDoc.id}:`, betError);
+          } catch (betError) {
+            console.error(`Error calculating bet ${betDoc.id}:`, betError);
+          }
         }
-      }
+      });
     } catch (e) {
       console.error("Settlement engine error:", e);
     }
@@ -5673,7 +5735,11 @@ export default function App() {
   }, [drawStates, isAdmin, currentUser]);
 
   const settleAllMissingMissingBets = async () => {
-    // Wrap to avoid duplicate triggers if needed
+    // Only trigger if user is active and it's been a while
+    const lastSettle = (window as any).__lastGlobalSettle || 0;
+    if (Date.now() - lastSettle < 30000) return; 
+    (window as any).__lastGlobalSettle = Date.now();
+    
     await settleAllMissingBets();
   };
 
@@ -5683,7 +5749,8 @@ export default function App() {
       
       // Perform draw transitions via heartbeat
       // Transaction ensures only one person actually writes the result
-      if (!currentUserRef.current) return;
+      // Fix: Don't strictly depend on profile state, use auth state
+      if (!auth.currentUser) return;
 
       const currentStates = drawStatesRef.current;
 
@@ -5692,6 +5759,7 @@ export default function App() {
         const state = currentStates[lotoId] as LotteryDrawState | undefined;
 
         // If state is missing OR it is time to draw
+        // Add a small buffer to ensure we don't fire too early
         if (!state || now >= state.nextDraw) {
           try {
             await runTransaction(db, async (transaction) => {
@@ -5801,14 +5869,18 @@ export default function App() {
 
               return { res, drawId: settlementDrawId };
             });
-          } catch (err) {
-            console.error(`Heartbeat Transition error for ${lotoId}:`, err);
+          } catch (err: any) {
+            if (err.message?.includes('quota')) {
+               console.error("HEARTBEAT QUOTA ERROR");
+            } else {
+               handleFirestoreError(err, OperationType.WRITE, `draw_states/${lotoId}`);
+            }
           }
         }
       }
-    }, 2000); 
+    }, 5000); 
     return () => clearInterval(timer);
-  }, []);
+  }, [lotteries]); 
 
 
   // --- Auth & Profile State ---
@@ -5823,18 +5895,34 @@ export default function App() {
         profileUnsub = onSnapshot(doc(db, 'users', user.uid), async (userDoc) => {
           if (userDoc.exists()) {
             setCurrentUser(userDoc.data());
-          } else if (user.email === 'oopqwe001@gmail.com') {
-            // Seed admin profile if missing
-            const adminProfile = { 
-              uid: user.uid, 
-              email: user.email, 
-              displayName: 'System Admin', 
-              balance: 0, 
-              invite_code: 'ADMIN001', 
-              createdAt: serverTimestamp() 
-            };
-            await setDoc(doc(db, 'users', user.uid), adminProfile);
+          } else {
+            // Document missing? Let's check if it's the admin
+            if (user.email === 'oopqwe001@gmail.com') {
+              // Seed admin profile if missing
+              const adminProfile = { 
+                uid: user.uid, 
+                email: user.email, 
+                displayName: 'System Admin', 
+                balance: 1000000, // Give admin some initial balance
+                invite_code: 'ADMIN001', 
+                createdAt: serverTimestamp() 
+              };
+              await setDoc(doc(db, 'users', user.uid), adminProfile);
+            } else {
+              // Create default profile for regular user if missing
+              const defaultProfile = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName || 'Player',
+                balance: 0,
+                invite_code: Math.random().toString(36).substring(2, 10).toUpperCase(),
+                createdAt: serverTimestamp()
+              };
+              await setDoc(doc(db, 'users', user.uid), defaultProfile);
+            }
           }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
         });
         
         // 2. Initial Admin Check
@@ -5971,6 +6059,7 @@ export default function App() {
             currentUser={currentUser}
             drawStates={drawStates}
             onSettleMissing={settleAllMissingBets}
+            hasQuotaError={hasQuotaError}
           />
         </LotteryContext.Provider>
       </ReferralContext.Provider>
