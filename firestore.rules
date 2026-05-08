@@ -27,17 +27,16 @@ service cloud.firestore {
       allow read: if isSignedIn() && (isOwner(userId) || (resource.data.referrer_id == request.auth.uid) || isAdmin());
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if (isOwner(userId) && (
-        // Action: Basic Profile Update
-        (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL'])) ||
-        // Action: Balance Change
-        (incoming().diff(existing()).affectedKeys().hasOnly(['balance']) && incoming().balance >= 0)
+        // Action: Profile/Withdrawal Details Update
+        (incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'balance', 'bank_name', 'account_number', 'account_name', 'withdraw_address']) && 
+         incoming().balance >= 0)
       )) || isAdmin();
       allow delete: if isAdmin();
     }
 
     function isValidTransaction(data) {
       return data.keys().hasAll(['uid', 'type', 'amount', 'status', 'timestamp']) &&
-             data.uid is string &&
+             data.uid == request.auth.uid &&
              data.type in ['deposit', 'withdrawal', 'commission', 'purchase'] &&
              data.amount is number &&
              data.status in ['pending', 'completed', 'failed', 'rejected'] &&
